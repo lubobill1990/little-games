@@ -1,0 +1,21 @@
+# Default to LF for text files. Godot's importer and the GDScript runtime are
+# line-ending agnostic, but a stable normalization keeps diffs clean.
+* text=auto eol=lf
+
+# Keep Windows scripts CRLF if we ever add any.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary safelist.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ogg binary
+*.mp3 binary
+*.wav binary
+*.ttf binary
+*.otf binary
+*.zip binary

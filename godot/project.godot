@@ -1,0 +1,30 @@
+; Engine configuration file.
+; Minimal hand-authored bootstrap. Subsequent tasks should let the Godot editor
+; manage this file (open, edit, save). Input actions live in code (InputManager,
+; task #2) so we deliberately keep the [input] section empty here.
+
+config_version=5
+
+[application]
+
+config/name="little-games"
+config/description="Classic games on web/Android/iOS/desktop with gamepad support."
+run/main_scene="res://scenes/menu/main_menu.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameInfo="*res://globals/game_info.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
