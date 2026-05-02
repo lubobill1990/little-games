@@ -1,153 +1,130 @@
 # CLAUDE.md
 
-This file is the entry point for any Claude Code session working on this repo. **Read it fully before doing anything.**
+Entry point for any Claude session in this repo. Read once, then act.
 
----
+## Brevity contract
 
-## 1. Project mission
+Every line in this file costs context for every future session. **If you (Claude) already understand a convention, don't expand on it; if you've seen a project pattern five times this session, don't restate it back.** Keep PR bodies, commit messages, and issue updates tight — say what changed, why it matters, and how it was tested. Cut everything else.
 
-Build a small, growing collection of **classic games** that play well on **web, Android, iOS, and desktop**, with **first-class gamepad support**. First game shipped: **Tetris**. The repo is meant to be the canonical, transparent log of how the games are built — every change goes through a tracked issue and PR.
+When updating this file: prefer fewer words, bullet points over prose, and a single canonical statement of each rule. Do not duplicate what's already in `docs/`.
 
-## 2. Tech stack
+## 1. Mission
 
-- **Engine**: [Godot 4.6](https://godotengine.org/) (GDScript). Standard build, **not** the .NET build.
-- **Test framework**: [GUT](https://github.com/bitwes/Gut) (vendored under `godot/addons/gut/`)
-- **CI**: GitHub Actions, headless Godot, `gut_cmdln.gd`
-- **Deploy targets** (in priority order):
-  1. **Web** → GitHub Pages (`https://lubobill1990.github.io/little-games/`)
-  2. **Android** → debug APK as Actions artifact
-  3. **Windows** → zipped exe per release
-  4. **iOS** → deferred (needs Apple developer account)
+A growing collection of **classic games** for **web / Android / iOS / desktop**, with **first-class gamepad support**. First game: **Tetris**.
 
-### Why Godot, not Flutter
+## 2. Stack
 
-Flutter Web has a heavy CanvasKit payload and laggy input; Flutter has no first-class gamepad API and would need three platform shims to behave consistently. Godot solves both natively, exports the same project to every target we care about, and `Input.is_action_pressed` works identically on every platform. See `docs/architecture.md` for the full rationale.
+- **Engine**: Godot 4.6 standard (GDScript). Not the .NET build.
+- **Tests**: GUT, vendored at `godot/addons/gut/`.
+- **CI**: GitHub Actions, headless Godot.
+- **Deploy**: Web (gh-pages) → Android APK artifact → Windows zip → iOS (deferred).
 
-## 3. Repository layout
+Rationale for Godot over Flutter / Unity / web-only: see `docs/architecture.md`.
+
+## 3. Layout
 
 ```
-little-games/
-├── CLAUDE.md                  # ← you are here
-├── README.md                  # user-facing intro + demo link
-├── godot/                     # Godot project root (open this in the editor)
-│   ├── project.godot
-│   ├── globals/               # Autoloads (singletons): InputManager, GameState
-│   ├── scenes/
-│   │   ├── menu/              # Game selection menu
-│   │   └── tetris/            # Tetris scenes
-│   ├── scripts/
-│   │   ├── core/              # Cross-game shared utilities
-│   │   └── tetris/            # Tetris-specific GDScript classes (pure logic in tetris/core/)
-│   ├── assets/                # Art, audio, fonts
-│   ├── addons/
-│   │   └── gut/               # Vendored GUT
-│   └── tests/
-│       ├── unit/              # Pure-logic GUT tests
-│       └── integration/       # Scene-driven end-to-end tests
-├── docs/
-│   ├── architecture.md
-│   ├── input-mapping.md
-│   └── adding-a-game.md
-└── .github/
-    ├── workflows/
-    │   ├── ci.yml             # Run GUT on every push/PR
-    │   └── deploy-web.yml     # Export web build and publish to gh-pages
-    ├── ISSUE_TEMPLATE/
-    └── pull_request_template.md
+godot/                  Godot project root
+  globals/              Autoloads (GameInfo, InputManager, …)
+  scenes/{menu,<game>}/
+  scripts/
+    core/               Cross-game shared utilities
+    <game>/core/        Per-game PURE logic (no Node, no OS calls) — unit-testable
+  assets/               Art, audio, fonts
+  addons/gut/           Vendored test framework
+  tests/{unit,integration}/
+docs/                   architecture, input-mapping, adding-a-game
+.github/                workflows, issue & PR templates
+scripts/board.sh        Move a Project board card by issue number
 ```
 
-## 4. How to work in this repo
-
-### Local prerequisites
-
-- Godot 4.6 standard (Windows: `scoop install godot`; macOS: `brew install --cask godot`; Linux: official binary)
-- Optional: Web/Android export templates installed from the editor (`Editor → Manage Export Templates`)
-
-### Run the game
+## 4. Run / test / export
 
 ```bash
-godot --path godot
+godot --path godot                                                    # play
+godot --headless --path godot -s addons/gut/gut_cmdln.gd \            # test
+  -gconfig=res://.gutconfig.json
+godot --headless --path godot --export-release "Web" build/web/index.html
 ```
 
-Or open `godot/project.godot` in the Godot editor and press F5.
+CI must be green before merge. Same command runs there.
 
-### Run tests
-
-```bash
-godot --headless --path godot -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
-```
-
-Same command runs in CI. **All tests must be green before merging a PR.**
-
-### Export builds
-
-Templates required. From the editor: `Project → Export → Add… → <platform>`. Web export goes to `build/web/`.
-
-## 5. Process — non-negotiable rules
+## 5. Process
 
 ### Issues + PRs
 
-- **Every change has a GitHub issue first.** Issues are tracked at <https://github.com/lubobill1990/little-games/issues> and on Project board <https://github.com/users/lubobill1990/projects/5/views/1>.
-- **Tasks are linear**, not parallel. Each task builds on the previous one. PR titles use the form `task/NN-<short-name>`. Example: `task/03-tetris-core`.
-- **One issue = one PR.** Don't bundle. Don't fragment.
-- PR body must reference the issue (`Closes #N`) and include a "How tested" section.
-- A PR is mergeable only when: CI green, manual smoke test passed (or impossible), reviewer (or self-review with explicit notes) signed off.
+- Every change starts as a GitHub issue. Issues live on Project #5: <https://github.com/users/lubobill1990/projects/5/views/1>.
+- Tasks are **linear**. One issue → one PR → merge → next.
+- Branch name: `task/NN-<slug>`.
+- PR body: link the issue (`Closes #N`) + "How tested" section.
 
-### Task status workflow (Project board columns)
+### Task status workflow
 
-Each task card moves through five columns. **Move it manually at every step** — the columns are the single source of truth for "what's the state of this task right now".
+```mermaid
+flowchart LR
+    Backlog["Backlog<br/>(idea)"]
+    Ready["Ready<br/>(PRD + Dev plan written,<br/>sub-agent reviewed,<br/>refinements folded in)"]
+    InProgress["In progress<br/>(branch + impl)"]
+    InReview["In review<br/>(PR open, CI green)"]
+    Done["Done<br/>(merged on main)"]
 
-| Column | Meaning | When to move in | When to move out |
-|---|---|---|---|
-| **Backlog** | Idea / placeholder. PRD not yet written. | Issue created. | PRD section in the issue is filled and approved. |
-| **Ready** | Fully scoped, ready to be picked up. PRD + deliverables + acceptance + test plan all written. | PRD approved. | Implementation work begins. |
-| **In progress** | Someone is actively working on it. A branch exists. | Branch checked out, work started. | All deliverables done, PR opened. |
-| **In review** | PR is open and awaiting human review. CI green. | PR opened against main. | Reviewer approves and PR is merged. |
-| **Done** | Merged into main. Acceptance criteria verified. | PR merged. | (Stays here.) |
+    Backlog -->|Claude writes PRD + Dev plan,<br/>then sub-agent review,<br/>then refines| Ready
+    Ready -->|Claude opens branch, codes| InProgress
+    InProgress -->|Claude opens PR| InReview
+    InReview -->|human approves & merges| Done
+    InReview -.->|review requests changes| InProgress
+```
 
-Hard rules:
-- Do **not** open a PR while the card is still in Ready or Backlog. Move it to **In progress** first.
-- Do **not** mark a card **Done** until the PR is merged on `main` and CI on `main` is green.
-- If review uncovers blocking issues, move the card back to **In progress** until ready for re-review.
-- If a task is abandoned, close the issue and add a comment explaining why; don't leave it stuck mid-column.
+| State | What it means |
+|---|---|
+| **Backlog** | Issue exists, no PRD/plan yet. |
+| **Ready** | PRD + Dev plan written *and* refined after a sub-agent review. Sittable on the shelf, fully scoped. |
+| **In progress** | Branch exists, code being written. |
+| **In review** | PR open, CI green, awaiting human. |
+| **Done** | Merged on `main`, CI green on `main`. |
+
+**Hard rules** (Claude must obey, automatically):
+
+1. **Move the card immediately on every transition.** Use `scripts/board.sh <issue> <Backlog|Ready|InProgress|InReview|Done>`. Don't batch.
+2. **Backlog → Ready requires sub-agent review.** Write PRD + Dev plan into the issue body, then spawn a sub-agent (`Plan` or `general-purpose`) to critique both, then fold the feedback in. Only then move to Ready.
+3. **No PR while in Backlog or Ready.** Move to In progress first.
+4. **Done = merged on `main` + CI green on `main`.** Not "approved", not "branch ready".
+5. **Review requests changes → back to In progress.**
+6. **Abandoned task → close issue with reason; don't strand the card.**
+
+#### PRD vs. Dev plan
+
+Both go in the issue body, in labeled sections.
+
+- **PRD** — *what & why*. Problem, goal, scope, non-goals, acceptance criteria.
+- **Dev plan** — *how*. Files to add/modify, public APIs, test strategy, risks, commit sequence inside the PR.
+
+Sub-agent's job: poke holes in scope, sequencing, missing edge cases, simpler alternatives.
 
 ### Commits
 
-- Conventional-ish: `feat:`, `fix:`, `test:`, `chore:`, `docs:`, `refactor:`, `ci:`.
-- Reference the issue in the body when relevant.
+Conventional-ish: `feat: …`, `fix: …`, `test: …`, `chore: …`, `docs: …`, `refactor: …`, `ci: …`. Reference issue when relevant.
 
 ### Code style
 
-- GDScript with **static typing** (`var x: int`, `func foo(b: Board) -> void`). The compiler will check it.
-- Tabs for indentation (Godot default).
-- Pure logic lives outside scenes (no `Node` references). This is what makes tests cheap.
-- Never write Godot-specific calls (e.g. `print`, `OS.`, `_process`) inside `scripts/*/core/`.
+- GDScript, **statically typed** (`var x: int`, `-> void`).
+- Tabs (Godot default).
+- Per-game `core/` must not import `Node` or call OS/Engine APIs. This is the testability contract.
 
-### Tests
+### Tests — three layers, all required
 
-Three layers, all required:
+1. **Unit** — pure logic. `tests/unit/`.
+2. **Scene** — input → core → render. Use `Input.parse_input_event`.
+3. **Integration** — scripted, deterministic-seed sessions. `tests/integration/`.
 
-1. **Unit tests** — pure logic (rotation, kicks, scoring, bag). `godot/tests/unit/`.
-2. **Scene tests** — input → core → render wiring. Use `Input.parse_input_event` to simulate.
-3. **Integration tests** — scripted gameplay sessions with deterministic seeds. `godot/tests/integration/`.
+## 6. Adding a new game
 
-CI fails the PR if coverage of new core logic drops or any test fails.
+See `docs/adding-a-game.md`.
 
-## 6. Conventions for adding a new game
+## 7. Don'ts
 
-Once the multi-game framework lands, follow `docs/adding-a-game.md`. Short version:
-
-1. Open a tracking issue and add it to the Project board.
-2. Add `godot/scripts/<game>/core/` (pure logic) and `godot/scenes/<game>/` (Godot scene).
-3. Implement the `Game` scene contract.
-4. Register in the menu.
-5. Tests in all three layers.
-
-## 7. Things you (Claude) should not do
-
-- Do **not** add Flutter, React Native, Unity, or any other engine. The decision is made.
-- Do **not** introduce `.NET`/C# Godot — keep one runtime.
-- Do **not** edit `project.godot` by hand if avoidable; open the editor.
-- Do **not** commit binary export templates, build artifacts, or `.godot/` cache. These belong in `.gitignore`.
-- Do **not** open a PR without a backing issue.
-- Do **not** mark a task complete in the project board if any test is red.
+- No Flutter / Unity / React Native — Godot is the decision.
+- No C#/.NET Godot.
+- Don't commit `.godot/` cache or build output (gitignored).
+- Don't open a PR without a backing issue.
+- Don't mark a card Done with red CI.
