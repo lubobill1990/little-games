@@ -17,13 +17,16 @@ signal action_released(action: StringName)
 var das_ms: int = 167:
 	set(value):
 		das_ms = value
-		_engine.das_ms = value
+		if _engine:
+			_engine.das_ms = value
 var arr_ms: int = 33:
 	set(value):
 		arr_ms = value
-		_engine.arr_ms = value
+		if _engine:
+			_engine.arr_ms = value
 
 var _engine: DasArrCls = DasArrCls.new()
+var _just_pressed: Dictionary = {}
 
 func _ready() -> void:
 	ActionMapDefaults.install()
@@ -38,11 +41,13 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	# Detect press / release transitions and feed the engine.
+	_just_pressed.clear()
 	var now := _now()
 	for action in ActionMapDefaults.ACTIONS:
 		var pressed := Input.is_action_pressed(action)
 		var held := _engine.is_held(action)
 		if pressed and not held:
+			_just_pressed[action] = true
 			_emit_engine(_engine.press(action, now))
 		elif held and not pressed:
 			_emit_engine(_engine.release(action, now))
@@ -54,6 +59,12 @@ func _notification(what: int) -> void:
 
 func is_action_pressed(action: StringName) -> bool:
 	return _engine.is_held(action)
+
+func is_action_just_pressed(action: StringName) -> bool:
+	return _just_pressed.has(action)
+
+func set_repeat_actions(actions: Array[StringName]) -> void:
+	_engine.set_repeatable(actions)
 
 func active_gamepad_name() -> String:
 	for id in Input.get_connected_joypads():
