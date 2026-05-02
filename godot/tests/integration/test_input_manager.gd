@@ -27,6 +27,14 @@ func before_each() -> void:
 	var im := _im()
 	im.das_ms = 80
 	im.arr_ms = 20
+	# Drain any state lingering from a prior test or from the autoload's
+	# `_ready` startup scan. CI has been observed entering a test with
+	# `_engine` already holding actions, which silently swallows the next
+	# `press` (idempotent) and breaks the press/release assertions.
+	for action in ActionMapDefaults.ACTIONS:
+		Input.action_release(action)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_on_pressed = func(a: StringName) -> void: pressed.append(a)
 	_on_repeated = func(a: StringName) -> void: repeated.append(a)
 	_on_released = func(a: StringName) -> void: released.append(a)
@@ -52,8 +60,13 @@ func _im() -> Node:
 
 func test_press_then_release_emits_expected_signals() -> void:
 	Input.action_press(&"hard_drop")
+	# Two frames so InputManager._process is guaranteed to observe the press
+	# before we release. `process_frame` may resume before _process runs
+	# in the same frame depending on tree node order; one frame isn't enough.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	Input.action_release(&"hard_drop")
+	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(pressed, [&"hard_drop"])
 	assert_eq(released, [&"hard_drop"])
