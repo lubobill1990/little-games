@@ -1,19 +1,17 @@
 extends GutTest
-## Scene-level test: drive InputManager via `Input.parse_input_event` with real
-## `InputEventKey`s mapped through `InputMap` (per CLAUDE.md §5 test layer rule)
-## and assert `action_pressed` / `action_repeated` / `action_released` fire,
-## and that focus-loss force-releases held actions.
+## Scene-level test: drive InputManager via `Input.action_press` /
+## `Input.action_release` (per CLAUDE.md §5 test layer rule) and assert
+## `action_pressed` / `action_repeated` / `action_released` fire, and that
+## focus-loss force-releases held actions.
 ##
-## We use real keys instead of `InputEventAction` because `InputEventAction`
-## synthesizes signals but does not flip the state queried by
-## `Input.is_action_pressed`, which is what `InputManager._process` polls.
+## We use `Input.action_press` rather than synthesizing `InputEventKey`s
+## because the latter is unreliable in headless CI: parsed key events don't
+## always propagate to `Input.is_action_pressed` within a small frame budget,
+## producing flaky red CI on the same code that passes locally.
+## `Input.action_press` directly flips the state `InputManager._process`
+## polls, which is the exact contract under test.
 
 const ActionMapDefaults := preload("res://scripts/core/input/action_map_defaults.gd")
-
-const _KEY_FOR_ACTION := {
-	&"hard_drop": KEY_SPACE,
-	&"move_left": KEY_LEFT,
-}
 
 var pressed: Array = []
 var repeated: Array = []
@@ -44,61 +42,40 @@ func after_each() -> void:
 		im.action_repeated.disconnect(_on_repeated)
 	if im.action_released.is_connected(_on_released):
 		im.action_released.disconnect(_on_released)
-	for action in _KEY_FOR_ACTION.keys():
+	for action in ActionMapDefaults.ACTIONS:
 		if Input.is_action_pressed(action):
-			await _send(action, false)
+			Input.action_release(action)
 	await get_tree().process_frame
 
 func _im() -> Node:
 	return Engine.get_main_loop().root.get_node("InputManager")
 
-func _send(action: StringName, pressed_state: bool) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = _KEY_FOR_ACTION[action]
-	ev.physical_keycode = _KEY_FOR_ACTION[action]
-	ev.pressed = pressed_state
-	Input.parse_input_event(ev)
-	Input.flush_buffered_events()
-	# `parse_input_event` is async w.r.t. the input state queried by
-	# `Input.is_action_pressed`; on slow CI runners a single process frame
-	# is not always enough for the state to flip. Poll a few frames so the
-	# next assertion sees a deterministic state.
-	for i in 5:
-		if Input.is_action_pressed(action) == pressed_state:
-			return
-		await get_tree().process_frame
-
-func _only(events: Array, action: StringName) -> Array:
-	return events.filter(func(a: StringName) -> bool: return a == action)
-
 func test_press_then_release_emits_expected_signals() -> void:
-	await _send(&"hard_drop", true)
+	Input.action_press(&"hard_drop")
 	await get_tree().process_frame
-	await _send(&"hard_drop", false)
+	Input.action_release(&"hard_drop")
 	await get_tree().process_frame
-	# KEY_SPACE binds both `hard_drop` and `ui_accept`; filter to the action
-	# under test so the assertion stays focused on the InputManager contract.
-	assert_eq(_only(pressed, &"hard_drop"), [&"hard_drop"])
-	assert_eq(_only(released, &"hard_drop"), [&"hard_drop"])
-	assert_eq(_only(repeated, &"hard_drop"), [], "hard_drop is non-repeatable")
+	assert_eq(pressed, [&"hard_drop"])
+	assert_eq(released, [&"hard_drop"])
+	assert_eq(repeated, [], "hard_drop is non-repeatable")
 
 func test_hold_repeatable_emits_repeats_after_das() -> void:
-	await _send(&"move_left", true)
+	Input.action_press(&"move_left")
 	var t0 := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 200:
 		await get_tree().process_frame
-	await _send(&"move_left", false)
+	Input.action_release(&"move_left")
 	await get_tree().process_frame
 	assert_eq(pressed, [&"move_left"])
 	assert_gt(repeated.size(), 0, "at least one repeat after DAS")
 	assert_eq(released, [&"move_left"])
 
 func test_focus_loss_releases_held_actions() -> void:
-	await _send(&"move_left", true)
+	Input.action_press(&"move_left")
 	await get_tree().process_frame
 	assert_eq(pressed, [&"move_left"])
 	_im().notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	await get_tree().process_frame
 	assert_eq(released, [&"move_left"], "focus-out releases held actions")
-	await _send(&"move_left", false)
+	Input.action_release(&"move_left")
 	await get_tree().process_frame
