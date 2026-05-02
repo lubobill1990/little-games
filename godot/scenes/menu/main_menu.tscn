@@ -18,3 +18,7 @@ layout_mode = 2
 layout_mode = 2
 text = "little-games"
 horizontal_alignment = 1
+
+[node name="PlayTetris" type="Button" parent="CenterContainer/VBoxContainer"]
+layout_mode = 2
+text = "Play Tetris"
