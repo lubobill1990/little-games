@@ -1,0 +1,46 @@
+name: Task
+description: A scoped, plannable unit of work that becomes one PR.
+title: "<area>: <imperative title>"
+labels: ["type:task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Status workflow on the Project board
+
+        `Backlog` → (PRD written) `Ready` → (work starts) `In progress` → (PR opened) `In review` → (review approved & merged) `Done`
+
+        Move the card manually at each step. Don't open a PR until the card is in **In progress**.
+  - type: textarea
+    id: prd
+    attributes:
+      label: PRD (problem, goal, scope, non-goals)
+      description: When this section is filled in, move the card to **Ready**.
+    validations:
+      required: true
+  - type: textarea
+    id: deliverables
+    attributes:
+      label: Deliverables
+      description: Concrete artifacts this task must produce.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we know it's done. Each item should be objectively checkable.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test plan
+      description: Unit, scene, integration. CI must be green.
+    validations:
+      required: true
+  - type: input
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issue numbers this task builds on. Tasks are linear.

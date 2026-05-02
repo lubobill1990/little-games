@@ -1,0 +1,30 @@
+name: Bug
+description: Something is broken or behaves unexpectedly.
+title: "bug: <one-line summary>"
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Godot 4.6.2 / Web (Chrome 142) / Windows 11 / Xbox Series controller"
+    validations:
+      required: true
