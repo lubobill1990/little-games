@@ -96,7 +96,7 @@ func reset_defaults() -> void:
 func bind_event(action: StringName, event: InputEvent, slot: String = SLOT_KBD) -> bool:
 	if action in RESERVED_ACTIONS:
 		return false
-	if not slot in SLOTS:
+	if slot not in SLOTS:
 		return false
 	var enc: Dictionary = _encode_event(event)
 	if enc.is_empty():

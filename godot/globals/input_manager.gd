@@ -31,7 +31,7 @@ var _just_pressed: Dictionary = {}
 func _ready() -> void:
 	ActionMapDefaults.install()
 	_apply_settings_overrides()
-	if Engine.has_singleton("Settings") or _has_settings_autoload():
+	if _has_settings_autoload():
 		Settings.changed.connect(_on_settings_changed)
 	_engine.das_ms = das_ms
 	_engine.arr_ms = arr_ms
@@ -46,7 +46,10 @@ func _has_settings_autoload() -> bool:
 	return get_tree().root.has_node("Settings")
 
 # Pull DAS/ARR + per-action rebindings from the Settings autoload (if present)
-# and replace InputMap events accordingly. Defaults survive if nothing is stored.
+# and replace InputMap events accordingly. Defaults of the un-overridden slot
+# are preserved: if a user only rebinds the keyboard, the gamepad default still
+# maps (and vice versa). Reviewer flagged the prior implementation for wiping
+# both slots whenever either had a stored override.
 func _apply_settings_overrides() -> void:
 	if not _has_settings_autoload():
 		return
@@ -59,8 +62,17 @@ func _apply_settings_overrides() -> void:
 		var pad: InputEvent = Settings.bound_event(action, Settings.SLOT_PAD)
 		if kbd == null and pad == null:
 			continue
-		# Replace all events for this action with the stored slots.
+		# Rebuild this action's event list: keep defaults for the slot the user
+		# didn't override, drop defaults for the slot they did, then append the
+		# user's overrides on top.
 		InputMap.action_erase_events(action)
+		for ev in ActionMapDefaults.default_events_for(action):
+			var is_pad: bool = ActionMapDefaults.is_pad_event(ev)
+			if is_pad and pad != null:
+				continue
+			if not is_pad and kbd != null:
+				continue
+			InputMap.action_add_event(action, ev)
 		if kbd != null:
 			InputMap.action_add_event(action, kbd)
 		if pad != null:
