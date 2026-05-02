@@ -46,7 +46,7 @@ func after_each() -> void:
 		im.action_released.disconnect(_on_released)
 	for action in _KEY_FOR_ACTION.keys():
 		if Input.is_action_pressed(action):
-			_send(action, false)
+			await _send(action, false)
 	await get_tree().process_frame
 
 func _im() -> Node:
@@ -59,14 +59,22 @@ func _send(action: StringName, pressed_state: bool) -> void:
 	ev.pressed = pressed_state
 	Input.parse_input_event(ev)
 	Input.flush_buffered_events()
+	# `parse_input_event` is async w.r.t. the input state queried by
+	# `Input.is_action_pressed`; on slow CI runners a single process frame
+	# is not always enough for the state to flip. Poll a few frames so the
+	# next assertion sees a deterministic state.
+	for i in 5:
+		if Input.is_action_pressed(action) == pressed_state:
+			return
+		await get_tree().process_frame
 
 func _only(events: Array, action: StringName) -> Array:
 	return events.filter(func(a: StringName) -> bool: return a == action)
 
 func test_press_then_release_emits_expected_signals() -> void:
-	_send(&"hard_drop", true)
+	await _send(&"hard_drop", true)
 	await get_tree().process_frame
-	_send(&"hard_drop", false)
+	await _send(&"hard_drop", false)
 	await get_tree().process_frame
 	# KEY_SPACE binds both `hard_drop` and `ui_accept`; filter to the action
 	# under test so the assertion stays focused on the InputManager contract.
@@ -75,22 +83,22 @@ func test_press_then_release_emits_expected_signals() -> void:
 	assert_eq(_only(repeated, &"hard_drop"), [], "hard_drop is non-repeatable")
 
 func test_hold_repeatable_emits_repeats_after_das() -> void:
-	_send(&"move_left", true)
+	await _send(&"move_left", true)
 	var t0 := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 200:
 		await get_tree().process_frame
-	_send(&"move_left", false)
+	await _send(&"move_left", false)
 	await get_tree().process_frame
 	assert_eq(pressed, [&"move_left"])
 	assert_gt(repeated.size(), 0, "at least one repeat after DAS")
 	assert_eq(released, [&"move_left"])
 
 func test_focus_loss_releases_held_actions() -> void:
-	_send(&"move_left", true)
+	await _send(&"move_left", true)
 	await get_tree().process_frame
 	assert_eq(pressed, [&"move_left"])
 	_im().notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	await get_tree().process_frame
 	assert_eq(released, [&"move_left"], "focus-out releases held actions")
-	_send(&"move_left", false)
+	await _send(&"move_left", false)
 	await get_tree().process_frame
