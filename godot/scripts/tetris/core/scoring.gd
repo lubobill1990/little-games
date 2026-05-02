@@ -23,7 +23,7 @@ const _BASE: Dictionary = {
 	# t_spin = NONE
 	0: { 0: 0, 1: 100, 2: 300, 3: 500, 4: 800 },
 	# t_spin = MINI: 100, 200, 400 for 0,1,2 lines (3+ rows is unreachable for mini).
-	1: { 0: 100, 1: 200, 2: 400, 3: 400 },
+	1: { 0: 100, 1: 200, 2: 400 },
 	# t_spin = FULL: 400, 800, 1200, 1600 for 0..3 lines.
 	2: { 0: 400, 1: 800, 2: 1200, 3: 1600 },
 }

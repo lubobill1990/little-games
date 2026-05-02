@@ -11,14 +11,14 @@ const PieceKind := preload("res://scripts/tetris/core/piece_kind.gd")
 var _rng: RandomNumberGenerator
 var _bag: Array  # holds upcoming kinds in pull order; refilled when empty
 
-static func create(seed: int) -> TetrisBag:
+static func create(bag_seed: int) -> TetrisBag:
 	var b: TetrisBag = TetrisBag.new()
-	b._init_seed(seed)
+	b._init_seed(bag_seed)
 	return b
 
-func _init_seed(seed: int) -> void:
+func _init_seed(bag_seed: int) -> void:
 	_rng = RandomNumberGenerator.new()
-	_rng.seed = seed
+	_rng.seed = bag_seed
 	_bag = []
 
 func _refill() -> void:
@@ -46,8 +46,8 @@ func peek(n: int) -> Array:
 ## Reseed mid-stream. Existing pre-generated bag tail is *kept* (so the next
 ## few pulls match what was previewed); new pulls beyond that draw from the
 ## reseeded RNG. Call before a pull if you want full reproducibility.
-func reseed(seed: int) -> void:
-	_rng.seed = seed
+func reseed(bag_seed: int) -> void:
+	_rng.seed = bag_seed
 
 ## Drop any pre-generated bag content. Use together with reseed() if you want
 ## a fresh deterministic stream from this point on.

@@ -37,7 +37,7 @@ var piece: Piece               # null if game over before respawn
 var held_kind: int = -1        # -1 = nothing held
 var hold_used: bool = false
 var _game_over: bool = false
-var _last_kick_index: int = -1 # records the kick used by the most recent rotate
+var _last_kick_index: int = -1 # kick used by most recent rotate; consumed only by T-spin classification on lock
 
 # Time / gravity bookkeeping.
 var _last_tick_ms: int = -1
@@ -47,11 +47,6 @@ var _gravity_ms_owed: int = 0  # accumulator; spends ms_per_row to drop one cell
 var _is_grounded: bool = false
 var _lock_ms_owed: int = 0
 var _lock_resets: int = 0
-
-# Soft drop: when true, gravity advances one cell per tick regardless of timer.
-# Caller pulses soft_drop() on input; this state is for continuous-drop scoring
-# accounting if a UI prefers that route.
-var _soft_drop_active: bool = false
 
 static func create(game_seed: int) -> TetrisGameState:
 	var g: TetrisGameState = TetrisGameState.new()
@@ -198,8 +193,6 @@ func _advance_gravity(dt_ms: int) -> void:
 	if dt_ms <= 0:
 		return
 	var step_ms: int = Levels.ms_per_row(scoring.level)
-	if _soft_drop_active:
-		step_ms = max(1, step_ms / 20)  # 20G-equivalent ratio, but caller can also call soft_drop() directly
 	_gravity_ms_owed += dt_ms
 	while _gravity_ms_owed >= step_ms:
 		_gravity_ms_owed -= step_ms
@@ -276,8 +269,8 @@ func _lock_piece(from_hard_drop: bool) -> void:
 	if all_above_visible:
 		var locked_kind: int = piece.kind
 		piece = null
-		_end_game(REASON_LOCK_OUT)
 		_emit_lock(t_spin, 0, locked_kind, false)
+		_end_game(REASON_LOCK_OUT)
 		return
 
 	var rows_cleared: int = board.clear_full_rows()
