@@ -5,11 +5,10 @@ extends CanvasLayer
 ##
 ## Visibility rules (see issue #2 truth table):
 ##   - mobile + no gamepad → visible after first input
-##   - mobile + gamepad    → hidden (user can re-enable in settings — task #5)
+##   - mobile + gamepad    → hidden
 ##   - desktop / web-mouse → hidden
 ##
-## Settings persistence ships with task #5; for now the overlay starts
-## hidden and a game can show it via `set_visible(true)`.
+## The overlay starts hidden and a game can show it via `set_visible(true)`.
 
 @export var force_visible: bool = false
 
