@@ -1,4 +1,4 @@
-extends Node2D
+extends Control
 ## Mini preview slot — renders a single piece kind (or empty) inside a fixed box.
 ## Used by both `next_queue` (one slot per upcoming piece) and `hold_slot`.
 
