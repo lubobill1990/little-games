@@ -16,6 +16,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameInfo="*res://globals/game_info.gd"
+InputManager="*res://globals/input_manager.gd"
 
 [display]
 
