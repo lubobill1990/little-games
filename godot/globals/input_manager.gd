@@ -30,6 +30,9 @@ var _just_pressed: Dictionary = {}
 
 func _ready() -> void:
 	ActionMapDefaults.install()
+	_apply_settings_overrides()
+	if Engine.has_singleton("Settings") or _has_settings_autoload():
+		Settings.changed.connect(_on_settings_changed)
 	_engine.das_ms = das_ms
 	_engine.arr_ms = arr_ms
 	_engine.set_repeatable(ActionMapDefaults.REPEATABLE)
@@ -38,6 +41,41 @@ func _ready() -> void:
 	for action in ActionMapDefaults.ACTIONS:
 		if Input.is_action_pressed(action):
 			_emit_engine(_engine.press(action, _now()))
+
+func _has_settings_autoload() -> bool:
+	return get_tree().root.has_node("Settings")
+
+# Pull DAS/ARR + per-action rebindings from the Settings autoload (if present)
+# and replace InputMap events accordingly. Defaults survive if nothing is stored.
+func _apply_settings_overrides() -> void:
+	if not _has_settings_autoload():
+		return
+	das_ms = int(Settings.get_value(&"input.das_ms", das_ms))
+	arr_ms = int(Settings.get_value(&"input.arr_ms", arr_ms))
+	for action in ActionMapDefaults.ACTIONS:
+		if action in Settings.RESERVED_ACTIONS:
+			continue
+		var kbd: InputEvent = Settings.bound_event(action, Settings.SLOT_KBD)
+		var pad: InputEvent = Settings.bound_event(action, Settings.SLOT_PAD)
+		if kbd == null and pad == null:
+			continue
+		# Replace all events for this action with the stored slots.
+		InputMap.action_erase_events(action)
+		if kbd != null:
+			InputMap.action_add_event(action, kbd)
+		if pad != null:
+			InputMap.action_add_event(action, pad)
+
+func _on_settings_changed(key: StringName) -> void:
+	var s: String = String(key)
+	if s == "input.das_ms":
+		das_ms = int(Settings.get_value(&"input.das_ms", das_ms))
+	elif s == "input.arr_ms":
+		arr_ms = int(Settings.get_value(&"input.arr_ms", arr_ms))
+	elif s.begins_with("input.binding."):
+		# Re-apply bindings (cheap; only runs on rebind).
+		ActionMapDefaults.install()
+		_apply_settings_overrides()
 
 func _process(_delta: float) -> void:
 	# Detect press / release transitions and feed the engine.
