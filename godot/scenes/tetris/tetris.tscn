@@ -1,0 +1,70 @@
+[gd_scene load_steps=8 format=3 uid="uid://btetrisroot01"]
+
+[ext_resource type="Script" path="res://scenes/tetris/tetris.gd" id="1_root"]
+[ext_resource type="Script" path="res://scenes/tetris/view/playfield.gd" id="2_pf"]
+[ext_resource type="Script" path="res://scenes/tetris/view/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scenes/tetris/view/next_queue.gd" id="4_next"]
+[ext_resource type="Script" path="res://scenes/tetris/view/hold_slot.gd" id="5_hold"]
+[ext_resource type="Script" path="res://scenes/tetris/view/pause_overlay.gd" id="6_pause"]
+[ext_resource type="Script" path="res://scenes/tetris/view/game_over_overlay.gd" id="7_over"]
+
+[node name="Tetris" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_root")
+
+[node name="HBox" type="HBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -300.0
+offset_right = 260.0
+offset_bottom = 300.0
+alignment = 1
+theme_override_constants/separation = 16
+
+[node name="Playfield" type="Node2D" parent="HBox"]
+script = ExtResource("2_pf")
+
+[node name="Side" type="VBoxContainer" parent="HBox"]
+custom_minimum_size = Vector2(160, 0)
+theme_override_constants/separation = 16
+
+[node name="HoldHeader" type="Label" parent="HBox/Side"]
+text = "HOLD"
+
+[node name="HoldSlot" type="Control" parent="HBox/Side"]
+custom_minimum_size = Vector2(80, 60)
+script = ExtResource("5_hold")
+
+[node name="HUD" type="VBoxContainer" parent="HBox/Side"]
+script = ExtResource("3_hud")
+theme_override_constants/separation = 8
+
+[node name="ScoreLabel" type="Label" parent="HBox/Side/HUD"]
+text = "SCORE
+0"
+
+[node name="LevelLabel" type="Label" parent="HBox/Side/HUD"]
+text = "LEVEL
+1"
+
+[node name="LinesLabel" type="Label" parent="HBox/Side/HUD"]
+text = "LINES
+0"
+
+[node name="NextHeader" type="Label" parent="HBox/Side"]
+text = "NEXT"
+
+[node name="NextQueue" type="VBoxContainer" parent="HBox/Side"]
+script = ExtResource("4_next")
+
+[node name="PauseOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("6_pause")
+
+[node name="GameOverOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("7_over")

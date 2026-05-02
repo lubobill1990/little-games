@@ -273,7 +273,8 @@ func _lock_piece(from_hard_drop: bool) -> void:
 		_end_game(REASON_LOCK_OUT)
 		return
 
-	var rows_cleared: int = board.clear_full_rows()
+	var cleared_rows: Array = board.full_rows()
+	var rows_cleared: int = board.clear_rows(cleared_rows)
 	# Perfect clear detection: board fully empty after the clear.
 	var perfect: bool = _board_is_empty()
 
@@ -284,15 +285,16 @@ func _lock_piece(from_hard_drop: bool) -> void:
 
 	var locked_kind: int = piece.kind
 	piece = null
-	_emit_lock(t_spin, rows_cleared, locked_kind, perfect)
+	_emit_lock(t_spin, rows_cleared, locked_kind, perfect, cleared_rows)
 
 	# Spawn next piece (may end the game with BLOCK_OUT).
 	_spawn_next()
 
-func _emit_lock(t_spin: int, rows: int, kind: int, perfect: bool) -> void:
+func _emit_lock(t_spin: int, rows: int, kind: int, perfect: bool, cleared_rows: Array = []) -> void:
 	emit_signal("piece_locked", {
 		"kind": kind,
 		"rows": rows,
+		"cleared_rows": cleared_rows,
 		"t_spin": t_spin,
 		"b2b": scoring.b2b >= 0,
 		"combo": max(0, scoring.combo),
