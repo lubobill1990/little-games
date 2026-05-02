@@ -20,7 +20,7 @@ const VISIBLE_ROWS: int = 20
 const COLS: int = 10
 const PADDING: int = 4
 
-var _state = null  # TetrisGameState; loose-typed to avoid circular preload
+var _state = null  # TetrisGameState; loose-typed since the view is a pure sink
 var _accepts_input: bool = true
 var _flash_rows: Array = []
 var _flash_alpha: float = 0.0

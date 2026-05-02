@@ -42,6 +42,7 @@ var _last_kick_index: int = -1 # kick used by most recent rotate; consumed only 
 # Time / gravity bookkeeping.
 var _last_tick_ms: int = -1
 var _gravity_ms_owed: int = 0  # accumulator; spends ms_per_row to drop one cell
+var _soft_drop_ms_owed: int = 0  # accumulator for held-down soft-drop rate limiting
 
 # Lock-delay bookkeeping. _is_grounded means piece is resting on something.
 var _is_grounded: bool = false
@@ -112,6 +113,27 @@ func soft_drop() -> int:
 	_lock_resets = 0
 	_recompute_grounded()
 	return 1
+
+## Rate-limited held-down soft drop. Caller passes elapsed real ms; we accumulate
+## and call `soft_drop()` at most once per Guideline interval (20× gravity).
+## Returns the number of cells dropped this call (0..n). Decoupling from frame
+## rate keeps soft-drop deterministic across 60 / 144 Hz / headless tests.
+func soft_drop_tick(dt_ms: int) -> int:
+	if _game_over or piece == null or dt_ms <= 0:
+		return 0
+	var step_ms: int = max(1, Levels.ms_per_row(scoring.level) / 20)
+	_soft_drop_ms_owed += dt_ms
+	var dropped: int = 0
+	while _soft_drop_ms_owed >= step_ms:
+		_soft_drop_ms_owed -= step_ms
+		if soft_drop() == 0:
+			_soft_drop_ms_owed = 0
+			break
+		dropped += 1
+	return dropped
+
+func soft_drop_release() -> void:
+	_soft_drop_ms_owed = 0
 
 func hard_drop() -> int:
 	if _game_over or piece == null:
@@ -236,6 +258,7 @@ func _spawn_specific(kind: int) -> void:
 	_lock_resets = 0
 	_lock_ms_owed = 0
 	_gravity_ms_owed = 0
+	_soft_drop_ms_owed = 0
 	_is_grounded = false
 	_last_kick_index = -1
 	# Block-out: if the spawn position is already blocked, the game ends with

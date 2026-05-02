@@ -70,9 +70,12 @@ func _process(delta: float) -> void:
 	match _phase:
 		Phase.PLAYING:
 			_logical_now_ms += dt
-			# Soft-drop is polled (held-down auto-drop). Each soft-drop step adds 1 to score.
+			# Rate-limited soft drop while the action is held; release zeroes the
+			# accumulator so a tap on a fast level doesn't drop multiple cells.
 			if InputManager.is_action_pressed(&"soft_drop"):
-				state.soft_drop()
+				state.soft_drop_tick(dt)
+			else:
+				state.soft_drop_release()
 			state.tick(_logical_now_ms)
 			_update_views()
 			# Detect game-over (set asynchronously by spawn-block-out).
@@ -86,8 +89,7 @@ func _process(delta: float) -> void:
 			var flash_a: float = 1.0 - float(_anim_elapsed_ms) / float(FLASH_MS)
 			playfield.set_flash(_flash_rows, flash_a)
 			if _anim_elapsed_ms >= FLASH_MS:
-				# Physically clear the rows in the board now.
-				state.board.clear_rows(_flash_rows)
+				# Rows were already cleared by core in _lock_piece.
 				playfield.set_flash([], 0.0)
 				_phase = Phase.ANIMATING_SETTLE
 				_anim_elapsed_ms = 0
@@ -237,7 +239,6 @@ func _toggle_pause() -> void:
 
 func _resume_after_animation() -> void:
 	_phase = Phase.PLAYING
-	_anim_elapsed_ms = 0
 	playfield.set_flash([], 0.0)
 	# Apply buffered inputs in order: move → rotate → hold.
 	if _buffered_move != 0:

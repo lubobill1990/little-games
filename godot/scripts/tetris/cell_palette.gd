@@ -1,4 +1,3 @@
-class_name TetrisCellPalette
 extends RefCounted
 ## Per-piece-kind cell color. Used by playfield, ghost, hold slot, next queue.
 

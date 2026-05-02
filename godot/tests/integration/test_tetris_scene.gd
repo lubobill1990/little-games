@@ -116,3 +116,38 @@ func test_restart_after_game_over_resets_state() -> void:
 	assert_false(scene.state.is_game_over(), "fresh state not game-over")
 	assert_eq(scene.state.score(), 0, "score reset")
 	assert_false(scene.game_over_overlay.visible, "overlay hidden after restart")
+
+# Regression: line-clear animation must not re-clear rows that core has already
+# cleared. Previously the FLASH→SETTLE transition called board.clear_rows again,
+# silently deleting the rows that had since shifted into those indices.
+func test_line_clear_animation_does_not_double_clear() -> void:
+	const Board := preload("res://scripts/tetris/core/board.gd")
+	const PieceKind := preload("res://scripts/tetris/core/piece_kind.gd")
+	const Piece := preload("res://scripts/tetris/core/piece.gd")
+	# Build a board where row 39 is full except cols 1-2 (where the O-piece
+	# will land), plus a "survivor" cell at row 37 col 5 that should shift
+	# down 1 row when row 39 clears.
+	var board = scene.state.board
+	board.reset()
+	board.set_cell(0, 39, PieceKind.Kind.O)
+	for c in range(3, Board.COLS):
+		board.set_cell(c, 39, PieceKind.Kind.O)
+	board.set_cell(5, 37, PieceKind.Kind.L)
+	# Force an O-piece positioned so its bottom row lands in row 39 cols 1-2.
+	scene.state.piece = Piece.spawn(PieceKind.Kind.O)
+	scene.state.piece.origin = Vector2i(0, 38)  # O cells: (1,38)(2,38)(1,39)(2,39)
+	scene.state.piece.rot = 0
+	# Lock the piece — core clears row 39 inside _lock_piece, emits piece_locked
+	# with cleared_rows=[39], scene transitions to ANIMATING_FLASH.
+	scene.state._lock_piece(true)
+	await get_tree().process_frame
+	assert_eq(scene._phase, scene.Phase.ANIMATING_FLASH, "scene entered flash phase")
+	# Drive the scene through FLASH (100 ms) + SETTLE (150 ms). _process reads
+	# real wall-clock dt; just await enough frames for total to exceed 250 ms.
+	var t0: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 350:
+		await get_tree().process_frame
+	# After the clear, the survivor at row 37 col 5 should have shifted down
+	# by exactly 1 row (row 38), not been deleted by a double clear.
+	assert_eq(board.get_cell(5, 38), PieceKind.Kind.L, "survivor cell preserved post-clear (row 38 col 5)")
+	assert_eq(board.get_cell(5, 37), 0, "old position now empty")

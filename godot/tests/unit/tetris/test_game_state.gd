@@ -233,6 +233,31 @@ func test_emits_piece_locked_signal_on_hard_drop() -> void:
 	g.hard_drop()
 	assert_signal_emitted(g, "piece_locked")
 
+# --- Soft drop rate limiting ---
+
+func test_soft_drop_tick_drops_at_20x_gravity() -> void:
+	# At level 1, gravity = 1000 ms/row → soft drop interval = 50 ms/cell.
+	# 200 ms of held-down soft drop produces exactly 4 cells regardless of fps.
+	var g = _new(1)
+	var origin0: Vector2i = g.current_piece().origin
+	var dropped: int = g.soft_drop_tick(200)
+	assert_eq(dropped, 4, "200ms / 50ms = 4 cells at level 1")
+	assert_eq(g.current_piece().origin.y, origin0.y + 4)
+
+func test_soft_drop_tick_below_interval_drops_nothing() -> void:
+	var g = _new(1)
+	var dropped: int = g.soft_drop_tick(40)  # < 50 ms interval
+	assert_eq(dropped, 0)
+
+func test_soft_drop_release_clears_accumulator() -> void:
+	# Two 40 ms ticks would accumulate to 80 ms → 1 cell, but a release
+	# between them zeros the accumulator so the second tick produces 0 cells.
+	var g = _new(1)
+	g.soft_drop_tick(40)
+	g.soft_drop_release()
+	var dropped: int = g.soft_drop_tick(40)
+	assert_eq(dropped, 0, "release zeroed the accumulator")
+
 # --- Levels lookup ---
 
 func test_levels_table_is_monotonically_decreasing() -> void:
