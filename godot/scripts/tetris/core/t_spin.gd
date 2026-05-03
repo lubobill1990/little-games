@@ -1,4 +1,3 @@
-class_name TetrisTSpin
 extends RefCounted
 ## T-spin classification, isolated for testability.
 ##

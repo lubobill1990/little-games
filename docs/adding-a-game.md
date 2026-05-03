@@ -24,6 +24,45 @@ godot/
     └── test_*.gd
 ```
 
+### `core/` cross-references — `preload`, never `class_name`
+
+Per-game `core/` scripts **must not** declare `class_name`. Use `const`
+preloads instead — for siblings AND for self-references inside static
+factories:
+
+```gdscript
+# scripts/<game>/core/state.gd
+extends RefCounted
+
+const Self := preload("res://scripts/<game>/core/state.gd")
+const Board := preload("res://scripts/<game>/core/board.gd")
+
+static func create(seed: int) -> Self:
+    var g: Self = Self.new()
+    g.board = Board.new()
+    return g
+```
+
+Reason: games are lazy-loaded from the menu via `descriptor.load_scene()`.
+The global `class_name` table is consulted before the script's own
+`class_name` registers, so any self-typed reference like
+`static func create() -> MyClass` fails to resolve on a cold launch and
+the whole core fails to compile. `preload` is a direct script reference
+that doesn't depend on the global table. CI enforces:
+
+```yaml
+- name: Lint — no class_name in per-game core/
+  run: |
+    if grep -rn '^class_name ' godot/scripts/*/core/; then
+      echo "::error::per-game core/ scripts must not declare class_name"
+      exit 1
+    fi
+```
+
+Shared infra under `scripts/core/` (e.g. `GameDescriptor`,
+`GameRegistry`, `DasArr`) is exempt — it isn't lazy-loaded and the
+register-on-startup pattern works fine there.
+
 ## 3. Implement the GameHost contract
 
 The menu launches a game by instancing its root scene and calling lifecycle

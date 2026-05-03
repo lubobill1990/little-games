@@ -45,6 +45,13 @@ jobs:
       - name: Verify Godot
         run: godot --version
 
+      - name: Lint — no class_name in per-game core/
+        run: |
+          if grep -rn '^class_name ' godot/scripts/*/core/; then
+            echo "::error::per-game core/ scripts must not declare class_name (see issue #33)"
+            exit 1
+          fi
+
       - name: Import project (populates .godot cache)
         run: |
           # `--import` exits non-zero on harmless reimport messages on some
@@ -57,6 +64,21 @@ jobs:
           godot --headless --path godot \
             -s addons/gut/gut_cmdln.gd \
             -gconfig=res://.gutconfig.json
+
+      - name: Cold-load smoke (subprocess, not GUT)
+        run: |
+          # Run in a fresh process so the global class table is empty —
+          # reproduces what a user hits on a real cold launch from the menu.
+          # GUT pre-compiles every test file at suite start, which warms the
+          # class table and hides the bug in #33. Belt-and-suspenders: check
+          # both exit code and stderr for SCRIPT ERROR (Godot can print
+          # compile errors without setting non-zero exit).
+          godot --headless --path godot --script res://tests/cold_load_smoke.gd 2> stderr.log
+          if grep -q "SCRIPT ERROR" stderr.log; then
+            cat stderr.log
+            echo "::error::SCRIPT ERROR detected during cold-load"
+            exit 1
+          fi
 
   export-web:
     name: Export Web (Pages)

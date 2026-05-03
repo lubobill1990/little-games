@@ -1,4 +1,3 @@
-class_name TetrisBoard
 extends RefCounted
 ## 10x40 playfield grid (cols 0..9, rows 0..39). Pure data + queries.
 ##

@@ -1,4 +1,3 @@
-class_name TetrisBag
 extends RefCounted
 ## 7-bag (random generator). Pure: no Engine, no global RNG.
 ##
@@ -6,13 +5,14 @@ extends RefCounted
 ## {I,O,T,S,Z,J,L}. After 7 pulls a new permutation is generated. Same seed
 ## always produces the same sequence. Use `peek(n)` for the Next preview.
 
+const Self := preload("res://scripts/tetris/core/bag.gd")
 const PieceKind := preload("res://scripts/tetris/core/piece_kind.gd")
 
 var _rng: RandomNumberGenerator
 var _bag: Array  # holds upcoming kinds in pull order; refilled when empty
 
-static func create(bag_seed: int) -> TetrisBag:
-	var b: TetrisBag = TetrisBag.new()
+static func create(bag_seed: int) -> Self:
+	var b: Self = Self.new()
 	b._init_seed(bag_seed)
 	return b
 

@@ -1,4 +1,3 @@
-class_name TetrisScoring
 extends RefCounted
 ## Tetris Guideline scoring: per-clear base, B2B (1.5x for difficult clears),
 ## combo bonus, and soft/hard-drop helpers. Pure stateful object — no Engine.

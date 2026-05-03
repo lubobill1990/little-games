@@ -27,7 +27,10 @@ offset_bottom = 300.0
 alignment = 1
 theme_override_constants/separation = 16
 
-[node name="Playfield" type="Node2D" parent="HBox"]
+[node name="PlayfieldHost" type="Control" parent="HBox"]
+custom_minimum_size = Vector2(288, 568)
+
+[node name="Playfield" type="Node2D" parent="HBox/PlayfieldHost"]
 script = ExtResource("2_pf")
 
 [node name="Side" type="VBoxContainer" parent="HBox"]

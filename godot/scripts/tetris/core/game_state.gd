@@ -1,4 +1,3 @@
-class_name TetrisGameState
 extends RefCounted
 ## The pure Tetris controller: composes Board, Bag, Scoring, T-spin into a
 ## tickable rule machine. No Node, no Engine, no autoloads — caller drives
@@ -8,6 +7,7 @@ extends RefCounted
 ## reproduces the same snapshot exactly — that's the property #7 (integration
 ## tests) relies on.
 
+const Self := preload("res://scripts/tetris/core/game_state.gd")
 const PieceKind := preload("res://scripts/tetris/core/piece_kind.gd")
 const Piece := preload("res://scripts/tetris/core/piece.gd")
 const Board := preload("res://scripts/tetris/core/board.gd")
@@ -49,8 +49,8 @@ var _is_grounded: bool = false
 var _lock_ms_owed: int = 0
 var _lock_resets: int = 0
 
-static func create(game_seed: int) -> TetrisGameState:
-	var g: TetrisGameState = TetrisGameState.new()
+static func create(game_seed: int) -> Self:
+	var g: Self = Self.new()
 	g.board = Board.new()
 	g.bag = Bag.create(game_seed)
 	g.scoring = Scoring.new()
