@@ -25,6 +25,7 @@ const Bullet := preload("res://scripts/tank/core/bullet.gd")
 const Aabb := preload("res://scripts/tank/core/aabb.gd")
 const Ai := preload("res://scripts/tank/core/ai.gd")
 const Spawn := preload("res://scripts/tank/core/spawn.gd")
+const Powerup := preload("res://scripts/tank/core/powerup.gd")
 
 const SCHEMA_VERSION: int = 1
 
@@ -409,16 +410,22 @@ func _step_one(t_ms: int) -> bool:
 		if moved:
 			changed = true
 	# (2b) enemy AI decision + movement.
+	# Freeze gate: when flags["freeze_until_ms"] > t_ms, enemies don't
+	# move or change facing — but the RNG draws still happen so the
+	# determinism contract (acceptance #10/#19) holds across frozen runs.
+	var frozen: bool = t_ms < int(flags.get("freeze_until_ms", 0))
 	for ei in range(enemies.size()):
 		var en: Dictionary = enemies[ei]
 		if not en["alive"]:
 			continue
 		var new_dir: int = Ai.decide_dir(_ai_target_rng, en, base_pos, config, t_ms)
-		if new_dir >= 0:
+		if not frozen and new_dir >= 0:
 			TankEntity.snap_to_rail(en, new_dir, config)
 			en["facing"] = new_dir
 			en["moving"] = true
 			changed = true
+		if frozen:
+			continue
 		# Build "others" excluding self.
 		var e_others: Array = []
 		for pi2 in range(_player_count):
@@ -432,12 +439,14 @@ func _step_one(t_ms: int) -> bool:
 		if emoved:
 			changed = true
 	# (3) enemy fire roll (1 randf per live enemy per sub-step — pinned for
-	# determinism, regardless of cooldown outcome).
+	# determinism, regardless of cooldown / freeze outcome).
 	for ei2 in range(enemies.size()):
 		var en2: Dictionary = enemies[ei2]
 		if not en2["alive"]:
 			continue
 		var want_fire: bool = Ai.should_fire(_ai_fire_rng, config)
+		if frozen:
+			continue  # RNG already drawn; just don't act.
 		if not want_fire:
 			continue
 		if t_ms < int(en2["fire_cooldown_until_ms"]):
@@ -453,6 +462,15 @@ func _step_one(t_ms: int) -> bool:
 		# Power-enemy bullets are fast (star=1 sentinel reuses bullet.speed lookup).
 		var espeed_bullet: int = config.bullet_speed_fast_sub if en2["kind"] == "power" else config.bullet_speed_normal_sub
 		bullets.append(Bullet.spawn_from_tank(en2, config, "enemy", ei2, espeed_bullet, 0))
+		changed = true
+	# (3b) power-up pickup + expiry. Pickup before bullet-vs-tank so a player
+	# walking onto a power-up tile can still take damage from a bullet on the
+	# SAME sub-step (the pickup happens at movement time; bullet phase is
+	# unaffected). Expiry runs first so a shovel that just expired doesn't
+	# block a bullet that was about to hit the base.
+	if Powerup.tick_expiries(self, t_ms):
+		changed = true
+	if Powerup.try_pickup(self, t_ms):
 		changed = true
 	if bullets.is_empty():
 		return changed
@@ -496,7 +514,15 @@ func _step_one(t_ms: int) -> bool:
 					continue
 				if Aabb.overlaps(b2["x"], b2["y"], Bullet.HALF_W, Bullet.HALF_H,
 						pt["x"], pt["y"], hx_t, hy_t):
+					# Helmet absorbs damage (acceptance #12c). Bullet is
+					# consumed either way. Lives / kill plumbing lands in
+					# the win/lose commit; for now we just remove the bullet
+					# and (if no helmet) leave a TODO marker for the next
+					# commit to wire respawn.
 					b2["alive"] = false
+					if t_ms >= int(pt["helmet_until_ms"]):
+						# Damage path — actual lives decrement in commit 6.
+						pass
 					changed = true
 					break
 		else:  # player bullet
@@ -512,6 +538,9 @@ func _step_one(t_ms: int) -> bool:
 						et["alive"] = false
 						scores[int(b2["owner_idx"])] += config.score_for_kind(String(et["kind"]))
 						wave_state["killed_count"] = int(wave_state.get("killed_count", 0)) + 1
+						# Bonus enemies drop a power-up (acceptance #11).
+						if bool(et.get("bonus", false)):
+							Powerup.spawn_for_bonus_kill(self, _drop_rng, t_ms)
 					b2["alive"] = false
 					changed = true
 					break
