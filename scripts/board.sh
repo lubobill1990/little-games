@@ -2,7 +2,7 @@
 # scripts/board.sh — move a Project board card by issue number.
 #
 # Usage:
-#   scripts/board.sh <issue-number> <Backlog|Ready|InProgress|InReview|Done>
+#   scripts/board.sh <issue-number> <Backlog|Ready|InProgress|InReview|ChangesRequested|Done>
 #
 # Why this script exists:
 #   The CLAUDE.md task workflow requires Claude to keep the Project board in
@@ -17,15 +17,16 @@ PROJECT_ID="PVT_kwHOAAnKBM4BWZYr"
 STATUS_FIELD_ID="PVTSSF_lAHOAAnKBM4BWZYrzhRuER4"
 
 declare -A STATUS_OPTION=(
-  [Backlog]="f75ad846"
-  [Ready]="61e4505c"
-  [InProgress]="47fc9ee4"
-  [InReview]="df73e18b"
-  [Done]="98236657"
+  [Backlog]="c159f539"
+  [Ready]="391bc048"
+  [InProgress]="52594841"
+  [InReview]="43a760f0"
+  [ChangesRequested]="4c71b2f8"
+  [Done]="bb829f92"
 )
 
 if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <issue-number> <Backlog|Ready|InProgress|InReview|Done>" >&2
+  echo "Usage: $0 <issue-number> <Backlog|Ready|InProgress|InReview|ChangesRequested|Done>" >&2
   exit 2
 fi
 

@@ -19,8 +19,16 @@ Thumbs.db
 # Misc
 *.log
 .tmp/
-# implement-task / gh-pr-review skill scratch
+
+# implement-task / gh-pr-review skill scratch (state files + worktree dirs;
+# these are per-machine and must never land in the repo).
 .lock
+.claude/gh-pr-review-state.json
+.gh-pr-review-state.json
+.pr-review-worktrees/
+.implement-task-state.json
+.implement-task-worktrees/
+.e2e-worktree/
 
 # Audio assets — see godot/assets/audio/README.md and issue #43.
 # Tetris SFX/BGM are licensed for personal/local use only and must never be
