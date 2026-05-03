@@ -1,4 +1,3 @@
-class_name TetrisLevels
 extends RefCounted
 ## Gravity ms-per-row by level (Tetris Worlds curve, the most-cited Guideline
 ## reference). Pure data. Levels >= MAX_LEVEL are clamped to the fastest tier.

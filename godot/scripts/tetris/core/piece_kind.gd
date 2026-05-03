@@ -1,4 +1,3 @@
-class_name TetrisPieceKind
 extends RefCounted
 ## SRS piece kinds and per-rotation cell layouts. Pure data — no Node, no Engine.
 ##

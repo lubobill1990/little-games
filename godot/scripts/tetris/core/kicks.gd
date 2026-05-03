@@ -1,4 +1,3 @@
-class_name TetrisKicks
 extends RefCounted
 ## SRS wall-kick offset tables. Pure data — no Node, no Engine.
 ##

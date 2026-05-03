@@ -1,23 +1,23 @@
-class_name TetrisPiece
 extends RefCounted
 ## Live tetromino state: kind + origin (col, row in 10x40 board space) + rotation.
 ## Pure value object. Rendering is a downstream concern.
 
+const Self := preload("res://scripts/tetris/core/piece.gd")
 const PieceKind := preload("res://scripts/tetris/core/piece_kind.gd")
 
 var kind: int = PieceKind.Kind.I
 var origin: Vector2i = Vector2i.ZERO
 var rot: int = PieceKind.Rot.ZERO
 
-static func spawn(kind_id: int) -> TetrisPiece:
-	var p: TetrisPiece = TetrisPiece.new()
+static func spawn(kind_id: int) -> Self:
+	var p: Self = Self.new()
 	p.kind = kind_id
 	p.origin = Vector2i(PieceKind.SPAWN_COLS[kind_id], PieceKind.SPAWN_ROW)
 	p.rot = PieceKind.Rot.ZERO
 	return p
 
-func clone() -> TetrisPiece:
-	var p: TetrisPiece = TetrisPiece.new()
+func clone() -> Self:
+	var p: Self = Self.new()
 	p.kind = kind
 	p.origin = origin
 	p.rot = rot
