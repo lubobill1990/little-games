@@ -31,7 +31,11 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if not _menu_root.visible or not _focus_pending:
 		return
-	if event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion or event is InputEventScreenTouch or event is InputEventMouseButton:
+	if event is InputEventKey or event is InputEventJoypadButton or event is InputEventScreenTouch or event is InputEventMouseButton:
+		_focus_pending = false
+		_focus_first_card()
+	elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.5:
+		# Filter axis tick noise / stick drift; only deliberate motion counts.
 		_focus_pending = false
 		_focus_first_card()
 
@@ -43,7 +47,6 @@ func _populate_grid() -> void:
 		# Keep going — the unbroken entries should still be playable.
 	_cards.clear()
 	for child in _grid.get_children():
-		_grid.remove_child(child)
 		child.queue_free()
 	for descriptor in GameRegistry.all():
 		# Skip entries whose scene didn't resolve so a typo doesn't break the menu.
@@ -104,7 +107,11 @@ func _reclaim_from_active_game() -> void:
 	_focus_first_card()
 
 func _is_game_host(node: Node) -> bool:
-	return node.has_method(&"start") and node.has_method(&"teardown") and node.has_signal(&"exit_requested")
+	return node.has_method(&"start") \
+		and node.has_method(&"pause") \
+		and node.has_method(&"resume") \
+		and node.has_method(&"teardown") \
+		and node.has_signal(&"exit_requested")
 
 func _fresh_seed() -> int:
 	return Time.get_ticks_msec() ^ (randi() & 0xFFFFFFFF)
