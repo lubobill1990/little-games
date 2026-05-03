@@ -65,6 +65,15 @@ extends Resource
 @export var ufo_interval_ms_init: int = 25000
 @export var ufo_jitter_ms: int = 5000     # ± half on each side
 
+# --- Dive (#30 follow-up; wave 2+) ---
+# How often to *consider* a dive. Combined with dive_probability(wave) to
+# yield the actual dive rate. 1500 ms = up to ~0.4 dives/sec at high waves.
+@export var dive_check_ms: int = 1500
+# Path traversal speed (t-units per second). 0.5 → 2 s per dive.
+@export var diver_speed: float = 0.5
+# Score multiplier when killing an enemy mid-dive vs in-formation.
+@export var diver_score_multiplier: int = 2
+
 # --- Wave progression ---
 # Each wave: formation_start_y -= wave_drop_y (clamped >= wave_min_start_y).
 @export var wave_drop_y: float = 8.0
