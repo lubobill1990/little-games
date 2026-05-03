@@ -7,6 +7,7 @@ signal menu_requested()
 
 var _score_label: Label
 var _level_label: Label
+var _best_label: Label
 var _menu_btn: Button
 
 func _ready() -> void:
@@ -35,6 +36,10 @@ func _ready() -> void:
 	_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_level_label.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(_level_label)
+	_best_label = Label.new()
+	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_best_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(_best_label)
 	var hint := Label.new()
 	hint.text = "Press Confirm to retry"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -47,9 +52,10 @@ func _ready() -> void:
 	InputManager.action_pressed.connect(_on_action_pressed)
 	visible = false
 
-func show_with(score: int, level: int) -> void:
+func show_with(score: int, level: int, best: int = 0) -> void:
 	_score_label.text = "Final Score: %d" % score
 	_level_label.text = "Level: %d" % level
+	_best_label.text = "Best: %d" % best
 	visible = true
 
 func _on_action_pressed(action: StringName) -> void:

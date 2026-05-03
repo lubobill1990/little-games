@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://bsnakeroot01"]
+[gd_scene load_steps=7 format=3 uid="uid://bsnakeroot01"]
 
 [ext_resource type="Script" path="res://scenes/snake/snake.gd" id="1_root"]
 [ext_resource type="Script" path="res://scenes/snake/view/board.gd" id="2_board"]
 [ext_resource type="Script" path="res://scenes/snake/view/hud.gd" id="3_hud"]
 [ext_resource type="Script" path="res://scenes/snake/view/pause_overlay.gd" id="4_pause"]
 [ext_resource type="Script" path="res://scenes/snake/view/game_over_overlay.gd" id="5_over"]
+[ext_resource type="Script" path="res://scenes/snake/view/start_screen.gd" id="6_start"]
 
 [node name="Snake" type="Control"]
 anchors_preset = 15
@@ -43,3 +44,6 @@ script = ExtResource("4_pause")
 
 [node name="GameOverOverlay" type="CanvasLayer" parent="."]
 script = ExtResource("5_over")
+
+[node name="StartScreen" type="CanvasLayer" parent="."]
+script = ExtResource("6_start")

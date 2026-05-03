@@ -20,6 +20,7 @@ Keys are dotted paths. Per-game keys are prefixed with the game's `id` (also use
 | `input.binding.<action>.<slot>` | `Dictionary` | #5b          | rebind slot — `<slot> ∈ {kbd, pad}` |
 | `tetris.high_score`      | `int`          | bootstrap          | live key in `globals/settings.gd`; rename to `tetris.best` is a backlog cleanup |
 | `snake.best.<difficulty>` | `int`         | snake-polish (#19) | `<difficulty> ∈ {easy, normal, hard}` |
+| `snake.last_difficulty`  | `String`       | snake-polish (#19) | last-picked difficulty id; default `normal` |
 | `g2048.best`             | `int`          | 2048-polish (#21)  | 4×4 only in v1 |
 | `breakout.best.level_NN` | `int`          | breakout-polish (#23) | per-level high score |
 | `breakout.best.run`      | `int`          | breakout-polish (#23) | best score across the full level pack |
