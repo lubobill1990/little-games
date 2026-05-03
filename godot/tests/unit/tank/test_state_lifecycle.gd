@@ -198,6 +198,9 @@ func test_release_fire_then_request_succeeds_after_cooldown() -> void:
 	assert_false(s.request_fire(0))
 	# Advance time past cooldown.
 	s.set_last_tick(1000)
+	# First bullet still in flight would otherwise hit the max-bullets cap;
+	# this test exercises cooldown semantics, so clear it to isolate.
+	s.bullets.clear()
 	assert_true(s.request_fire(0))
 
 

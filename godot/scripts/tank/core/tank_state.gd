@@ -21,6 +21,8 @@ const TankLevel := preload("res://scripts/tank/core/tank_level.gd")
 const TankEntity := preload("res://scripts/tank/core/tank_entity.gd")
 const TileGrid := preload("res://scripts/tank/core/tile_grid.gd")
 const SubRng := preload("res://scripts/tank/core/sub_rng.gd")
+const Bullet := preload("res://scripts/tank/core/bullet.gd")
+const Aabb := preload("res://scripts/tank/core/aabb.gd")
 
 const SCHEMA_VERSION: int = 1
 
@@ -158,9 +160,10 @@ func set_player_intent(player_idx: int, dir: int) -> void:
 
 
 ## Edge-triggered fire request. Returns true iff accepted (cooldown
-## elapsed, player alive, and previous fire latched-cleared). Bullet
-## spawn is reserved for the bullet commit; for now this just toggles the
-## latch + cooldown so AI / scene callers can be wired in advance.
+## elapsed, player alive, latch released, and the player has fewer live
+## bullets than the per-star cap). The bullet is spawned at the tank's
+## muzzle and added to `bullets` immediately so the within-sub-step
+## resolution order in `_step_one` can see it on the very next tick.
 func request_fire(player_idx: int) -> bool:
 	if player_idx < 0 or player_idx >= _player_count:
 		return false
@@ -171,9 +174,20 @@ func request_fire(player_idx: int) -> bool:
 		return false  # holding the button is not autofire
 	if now_ms < tank["fire_cooldown_until_ms"]:
 		return false
+	# Max-bullets-on-screen rule: star ≥ 3 → 2 bullets; otherwise 1.
+	var star: int = int(tank["star"])
+	var max_bullets: int = config.star_max_bullets_l3 if star >= 3 else 1
+	var live: int = 0
+	for b in bullets:
+		if b["alive"] and b["owner_kind"] == "player" and int(b["owner_idx"]) == player_idx:
+			live += 1
+	if live >= max_bullets:
+		return false
 	tank["fire_latched"] = true
 	tank["fire_cooldown_until_ms"] = now_ms + config.fire_cooldown_ms
-	# Bullet spawn happens in the bullet commit — reserve a hook here.
+	# Star ≥ 1 → fast bullet (per acceptance #4-adjacent + tank_config notes).
+	var speed: int = config.bullet_speed_fast_sub if star >= 1 else config.bullet_speed_normal_sub
+	bullets.append(Bullet.spawn_from_tank(tank, config, "player", player_idx, speed, star))
 	return true
 
 
@@ -349,17 +363,30 @@ static func from_snapshot(snap: Dictionary) -> Self:
 # ---------------- internal ----------------
 
 ## Resolve one sub-step. Returns true iff visible state changed.
-## v1 (this commit) only resolves player-tank movement.
+##
+## Order (per acceptance #6):
+##   1. movement (player tanks; enemy tanks land in a later commit)
+##   2. bullet motion (advance every live bullet by speed_sub)
+##   3. bullet-vs-bullet mutual cancel (player↔enemy AABB overlap)
+##   4. bullet-vs-tank (enemy bullets damage players; player bullets damage
+##      enemies; teammates immune per acceptance #9 — currently a no-op
+##      because enemies[] is empty until the AI commit, and same-owner
+##      bullets ignore their own tanks)
+##   5. bullet-vs-tile (brick erosion or steel break by star ≥ 2; bullet
+##      consumed on contact regardless)
+##   6. bullet-vs-base (any bullet hit ends the game; lose handled in the
+##      win/lose commit — for now we just clear the base tile + consume)
+##   7. prune dead bullets
+##
+## Iteration is `(owner_kind, owner_idx, bullet_idx)` with player < enemy,
+## so resolution is deterministic across runs and snapshot-replays.
 func _step_one(_t_ms: int) -> bool:
 	var changed: bool = false
-	# Movement: each player tank tries to advance one step in `facing`.
-	# Order: P1 then P2. Within-tick ties on overlap are resolved by
-	# letting the second tank's try_step see the first's NEW position.
+	# (1) movement.
 	for idx in range(_player_count):
 		var tank: Dictionary = players[idx] as Dictionary
 		if not tank["alive"] or not tank["moving"]:
 			continue
-		# Other tanks for collision: every OTHER live tank entity.
 		var others: Array = []
 		for jdx in range(_player_count):
 			if jdx == idx:
@@ -371,7 +398,149 @@ func _step_one(_t_ms: int) -> bool:
 				config.tank_speed_player_sub, grid, config, others)
 		if moved:
 			changed = true
+	if bullets.is_empty():
+		return changed
+	# (2) advance bullets. Out-of-world → consume immediately so they don't
+	# persist into the collision phases below.
+	for b in bullets:
+		if not b["alive"]:
+			continue
+		Bullet.advance(b)
+		if Bullet.out_of_world(b, config):
+			b["alive"] = false
+			changed = true
+	# Build deterministic iteration order: players first (by owner_idx,
+	# then bullet_idx), then enemies. We only need indices into `bullets`
+	# because each bullet's owner is recorded on the dict.
+	var order: Array = _bullet_iteration_order()
+	# (3) bullet-vs-bullet mutual cancel. A player bullet and an enemy
+	# bullet whose AABBs overlap on this sub-step both vanish before any
+	# other phase touches them. Same-owner bullets do NOT cancel.
+	for i in range(order.size()):
+		var bi: Dictionary = bullets[order[i]]
+		if not bi["alive"]:
+			continue
+		for j in range(i + 1, order.size()):
+			var bj: Dictionary = bullets[order[j]]
+			if not bj["alive"]:
+				continue
+			if bi["owner_kind"] == bj["owner_kind"]:
+				continue
+			if Aabb.overlaps(bi["x"], bi["y"], Bullet.HALF_W, Bullet.HALF_H,
+					bj["x"], bj["y"], Bullet.HALF_W, Bullet.HALF_H):
+				bi["alive"] = false
+				bj["alive"] = false
+				changed = true
+				break  # bi is dead; move on to next i
+	# (4) bullet-vs-tank.
+	# Player bullets hit live enemies (skipped this commit until enemies[]
+	# populates). Enemy bullets hit live players (helmet check + lives in
+	# the win/lose commit; for now the tank just loses the bullet — visible
+	# state still changes). Teammates immune.
+	var hx_t: int = (config.tank_w_tiles * config.tile_size_sub) / 2
+	var hy_t: int = (config.tank_h_tiles * config.tile_size_sub) / 2
+	for idx2 in order:
+		var b2: Dictionary = bullets[idx2]
+		if not b2["alive"]:
+			continue
+		if b2["owner_kind"] == "enemy":
+			for pidx in range(_player_count):
+				var pt: Dictionary = players[pidx]
+				if not pt["alive"]:
+					continue
+				if Aabb.overlaps(b2["x"], b2["y"], Bullet.HALF_W, Bullet.HALF_H,
+						pt["x"], pt["y"], hx_t, hy_t):
+					b2["alive"] = false
+					changed = true
+					break
+		else:  # player bullet
+			for eidx in range(enemies.size()):
+				var et: Dictionary = enemies[eidx]
+				if not et["alive"]:
+					continue
+				if Aabb.overlaps(b2["x"], b2["y"], Bullet.HALF_W, Bullet.HALF_H,
+						et["x"], et["y"], hx_t, hy_t):
+					b2["alive"] = false
+					changed = true
+					break
+	# (5) bullet-vs-tile. Brick erosion uses bullet TRAVEL direction.
+	# Steel only breaks for star ≥ 2. Either way, bullet is consumed on
+	# contact with brick or steel.
+	for idx3 in order:
+		var b3: Dictionary = bullets[idx3]
+		if not b3["alive"]:
+			continue
+		var hit_tile: bool = false
+		for tr in Bullet.tiles_under_bullet(b3["x"], b3["y"], config):
+			var c: int = tr[0]
+			var r: int = tr[1]
+			var tile: int = grid.get_tile(c, r)
+			if tile == TileGrid.TILE_BRICK and grid.get_brick(c, r) != TileGrid.BRICK_DESTROYED:
+				grid.erode_brick(c, r, b3["dir"])
+				hit_tile = true
+				break
+			if tile == TileGrid.TILE_STEEL:
+				if int(b3["star"]) >= 2:
+					grid.break_steel(c, r)
+				hit_tile = true
+				break
+		if hit_tile:
+			b3["alive"] = false
+			changed = true
+	# (6) bullet-vs-base. Any bullet that overlaps the base tile destroys
+	# both. Lose-condition wiring lands in the win/lose commit.
+	if base_pos.size() == 2:
+		var bx: int = (int(base_pos[0])) * config.tile_size_sub + config.tile_size_sub / 2
+		var by: int = (int(base_pos[1])) * config.tile_size_sub + config.tile_size_sub / 2
+		var bhx: int = config.tile_size_sub / 2
+		var bhy: int = config.tile_size_sub / 2
+		for idx4 in order:
+			var b4: Dictionary = bullets[idx4]
+			if not b4["alive"]:
+				continue
+			if grid.get_tile(int(base_pos[0]), int(base_pos[1])) != TileGrid.TILE_BASE:
+				break  # already destroyed
+			if Aabb.overlaps(b4["x"], b4["y"], Bullet.HALF_W, Bullet.HALF_H,
+					bx, by, bhx, bhy):
+				grid.set_tile(int(base_pos[0]), int(base_pos[1]), TileGrid.TILE_EMPTY)
+				b4["alive"] = false
+				changed = true
+				break
+	# (7) prune.
+	var kept: Array = []
+	for b5 in bullets:
+		if b5["alive"]:
+			kept.append(b5)
+	if kept.size() != bullets.size():
+		bullets = kept
+		changed = true
 	return changed
+
+
+## Indices into `bullets[]` ordered by (owner_kind=player_first, owner_idx,
+## bullet_idx). Used to give the within-sub-step resolution a deterministic
+## tie-break that snapshot replays can reproduce.
+func _bullet_iteration_order() -> Array:
+	var players_part: Array = []
+	var enemies_part: Array = []
+	for i in range(bullets.size()):
+		if bullets[i]["owner_kind"] == "player":
+			players_part.append(i)
+		else:
+			enemies_part.append(i)
+	players_part.sort_custom(func(a: int, b: int) -> bool:
+		var ai: int = int(bullets[a]["owner_idx"])
+		var bi: int = int(bullets[b]["owner_idx"])
+		if ai != bi:
+			return ai < bi
+		return a < b)
+	enemies_part.sort_custom(func(a: int, b: int) -> bool:
+		var ai: int = int(bullets[a]["owner_idx"])
+		var bi: int = int(bullets[b]["owner_idx"])
+		if ai != bi:
+			return ai < bi
+		return a < b)
+	return players_part + enemies_part
 
 
 func _rng_state_snapshot() -> Dictionary:
