@@ -165,14 +165,16 @@ func _setup_sfx() -> void:
 	], 0.55))
 	# UFO loop player: a sine warble, looping. We retrigger on each "start".
 	_ufo_loop_player = AudioStreamPlayer.new()
-	var loop_stream: AudioStreamWAV = SfxTones.tone(420.0, 0.30, 0.30)
-	loop_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	# `looping_tone` lives in SfxTones (godot/scripts/) so this scene file
+	# stays free of audio-stream type substrings (the audio-containment lint
+	# in CI; see issue #43).
+	var loop_stream := SfxTones.looping_tone(420.0, 0.30, 0.30)
 	loop_stream.loop_end = loop_stream.data.size() / 2
 	_ufo_loop_player.stream = loop_stream
 	add_child(_ufo_loop_player)
 
 
-func _register_oneshot(key: StringName, stream: AudioStreamWAV) -> void:
+func _register_oneshot(key: StringName, stream: AudioStream) -> void:
 	var p: AudioStreamPlayer = AudioStreamPlayer.new()
 	p.stream = stream
 	add_child(p)
