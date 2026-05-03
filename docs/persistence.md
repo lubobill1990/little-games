@@ -18,7 +18,7 @@ Keys are dotted paths. Per-game keys are prefixed with the game's `id` (also use
 | `input.das_ms`           | `int`          | #5a                | Delayed-Auto-Shift, ms |
 | `input.arr_ms`           | `int`          | #5a                | Auto-Repeat-Rate, ms |
 | `input.binding.<action>.<slot>` | `Dictionary` | #5b          | rebind slot — `<slot> ∈ {kbd, pad}` |
-| `tetris.best`            | `int`          | #5a                | replaces `tetris.high_score` |
+| `tetris.high_score`      | `int`          | bootstrap          | live key in `globals/settings.gd`; rename to `tetris.best` is a backlog cleanup |
 | `snake.best.<difficulty>` | `int`         | snake-polish (#19) | `<difficulty> ∈ {easy, normal, hard}` |
 | `g2048.best`             | `int`          | 2048-polish (#21)  | 4×4 only in v1 |
 | `breakout.best.level_NN` | `int`          | breakout-polish (#23) | per-level high score |
@@ -28,17 +28,17 @@ Game IDs are intentionally **not** the project name (`2048` would lead with a di
 
 ## Snapshot schema
 
-Every per-game `core/`'s `snapshot()` returns a Godot `Dictionary` with at least:
+Every per-game `core/`'s `snapshot()` returns a Godot `Dictionary`. New cores **SHOULD** include:
 
 - `version: int` — schema version. Bumped on **breaking** changes (renamed/removed fields, changed semantics). Adding a new optional field that the scene tolerates is *not* breaking.
 - … game-specific fields (board, pieces, score, etc.).
+
+The existing tetris core (`scripts/tetris/core/game_state.gd`) does **not** yet include `version`; it'll be added in #35 (its own polish PR), at which point this section will move from SHOULD to MUST. Until then, persistence code that round-trips a snapshot must defensively treat a missing `version` as the implicit version `0`.
 
 This is the canonical wire format between core ↔ scene ↔ persistence:
 
 - The **scene** consumes `snapshot()` to render. It diffs successive snapshots between ticks to detect what changed (see `docs/architecture.md` § "Snapshot diffs, not signals").
 - **Persistence** writes a snapshot subset (typically `version` + a high-score field) under the namespaced key.
-
-Cores **never** emit Godot signals. They are pure GDScript with no `Node` dependency — see `CLAUDE.md` § "Code style".
 
 ## Schema-mismatch policy
 

@@ -41,11 +41,13 @@ The hard rule: **per-game `core/` must not import `Node` or anything Godot-speci
 
 ## Snapshot diffs, not signals
 
-Per-game `core/` exposes mutations via `snapshot()` returning a `Dictionary` with at least a `version: int` field plus game-specific state. Scenes detect what changed by **diffing successive snapshots between ticks** — never by subscribing to signals. Reasons:
+Per-game `core/` exposes its evolving state via `snapshot()` returning a `Dictionary` (new cores SHOULD include a `version: int` field — see `docs/persistence.md`). Scenes detect what changed by **diffing successive snapshots between ticks** rather than subscribing to per-state-bit signals. Reasons:
 
 - Cores stay `Node`-free (the testability contract above).
 - Replay/integration tests can drive a core deterministically and assert on snapshots without a render layer attached.
 - One uniform mechanism replaces ad-hoc per-event callbacks.
+
+**Exception — one-shot events.** Cores MAY expose Godot `signal`s for *discrete events* that aren't usefully captured by snapshot diffs (e.g. `piece_locked` carrying line-clear metadata, `game_over` carrying a reason code). These are fire-and-forget notifications, never used to communicate ongoing state. The tetris core (`scripts/tetris/core/game_state.gd`) uses both mechanisms: snapshot for the board/piece state, signals for `piece_locked` / `game_over`. The general rule: if the scene needs to *react* to a one-shot moment (SFX, screen-shake, modal), a signal is fine; if it needs to *render* a value, that value goes in the snapshot.
 
 See `docs/persistence.md` for the canonical key namespace and schema-mismatch policy that builds on this contract.
 
