@@ -12,6 +12,7 @@ const _GAMES: Array = [
 	[&"tetris", "Tetris", "res://scenes/tetris/tetris.tscn", ""],
 	[&"snake", "Snake", "res://scenes/snake/snake.tscn", ""],
 	[&"g2048", "2048", "res://scenes/g2048/g2048.tscn", ""],
+	[&"breakout", "Breakout", "res://scenes/breakout/breakout.tscn", ""],
 ]
 
 static func all() -> Array:
