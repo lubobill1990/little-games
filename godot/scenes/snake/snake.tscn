@@ -1,0 +1,45 @@
+[gd_scene load_steps=6 format=3 uid="uid://bsnakeroot01"]
+
+[ext_resource type="Script" path="res://scenes/snake/snake.gd" id="1_root"]
+[ext_resource type="Script" path="res://scenes/snake/view/board.gd" id="2_board"]
+[ext_resource type="Script" path="res://scenes/snake/view/hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scenes/snake/view/pause_overlay.gd" id="4_pause"]
+[ext_resource type="Script" path="res://scenes/snake/view/game_over_overlay.gd" id="5_over"]
+
+[node name="Snake" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_root")
+
+[node name="HBox" type="HBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -200.0
+offset_right = 260.0
+offset_bottom = 200.0
+alignment = 1
+theme_override_constants/separation = 16
+
+[node name="BoardHost" type="Control" parent="HBox"]
+custom_minimum_size = Vector2(320, 320)
+
+[node name="Board" type="Node2D" parent="HBox/BoardHost"]
+script = ExtResource("2_board")
+
+[node name="Side" type="VBoxContainer" parent="HBox"]
+custom_minimum_size = Vector2(140, 0)
+theme_override_constants/separation = 16
+
+[node name="HUD" type="VBoxContainer" parent="HBox/Side"]
+script = ExtResource("3_hud")
+
+[node name="PauseOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("4_pause")
+
+[node name="GameOverOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("5_over")
