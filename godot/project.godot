@@ -13,11 +13,17 @@ run/main_scene="res://scenes/menu/main_menu.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[audio]
+
+buses/default_bus_layout="res://audio/default_bus_layout.tres"
+
 [autoload]
 
 GameInfo="*res://globals/game_info.gd"
 Settings="*res://globals/settings.gd"
 InputManager="*res://globals/input_manager.gd"
+SfxLibrary="*res://globals/sfx_library.gd"
+BgmPlayer="*res://globals/bgm_player.gd"
 
 [display]
 
