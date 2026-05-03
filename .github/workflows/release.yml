@@ -1,0 +1,87 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE_BASE: "https://github.com/godotengine/godot/releases/download/4.6.2-stable"
+
+jobs:
+  build-and-attach:
+    name: Build artifacts and attach to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip \
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          chmod +x ~/godot/godot
+
+      - name: Add Godot to PATH
+        run: echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Cache export templates
+        id: templates-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-templates-${{ env.GODOT_VERSION }}-stable
+          restore-keys: |
+            godot-templates-
+
+      - name: Install export templates
+        if: steps.templates-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          curl -fsSL -o /tmp/templates.tpz \
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q /tmp/templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Import project
+        run: godot --headless --path godot --import || true
+
+      - name: Build Web export
+        run: |
+          mkdir -p build/web
+          godot --headless --path godot --export-release "Web" ../build/web/index.html
+          touch build/web/.nojekyll
+
+      - name: Build Windows export
+        run: |
+          mkdir -p build/windows
+          godot --headless --path godot --export-release "Windows Desktop" ../build/windows/little-games.exe
+
+      - name: Package artifacts
+        run: |
+          (cd build/web && zip -qr ../little-games-${{ github.ref_name }}-web.zip .)
+          (cd build/windows && zip -qr ../little-games-${{ github.ref_name }}-windows.zip .)
+          ls -lh build/
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/little-games-${{ github.ref_name }}-web.zip
+            build/little-games-${{ github.ref_name }}-windows.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
