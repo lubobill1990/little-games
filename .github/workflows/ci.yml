@@ -11,11 +11,6 @@ permissions:
   pages: write
   id-token: write
 
-# Single in-flight Pages deploy at a time; cancel queued runs.
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 env:
   GODOT_VERSION: "4.6.2"
   GODOT_RELEASE_BASE: "https://github.com/godotengine/godot/releases/download/4.6.2-stable"
@@ -67,6 +62,11 @@ jobs:
     name: Export Web (Pages)
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Serialize Pages deploys (Pages allows one live deployment per environment).
+    # Job-scoped — keeps PR `test` runs from queuing behind a main-branch deploy.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment:
       name: github-pages
