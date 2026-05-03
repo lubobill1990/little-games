@@ -45,6 +45,13 @@ jobs:
       - name: Verify Godot
         run: godot --version
 
+      - name: Lint — no class_name in per-game core/
+        run: |
+          if grep -rn '^class_name ' godot/scripts/*/core/; then
+            echo "::error::per-game core/ scripts must not declare class_name (see issue #33)"
+            exit 1
+          fi
+
       - name: Import project (populates .godot cache)
         run: |
           # `--import` exits non-zero on harmless reimport messages on some
