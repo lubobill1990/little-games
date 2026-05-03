@@ -12,53 +12,52 @@ const REPEATABLE: Array[StringName] = [
 	&"move_left", &"move_right",
 ]
 
+# Per-action defaults as (slot, value) pairs. Slot is "kbd" → keycode int, or
+# "pad" → button_index int. `default_events_for(action)` materializes these
+# into fresh InputEvent instances for InputManager._apply_settings_overrides
+# so it can selectively replace one slot without erasing the other's defaults.
+const _DEFAULTS: Dictionary = {
+	&"move_left":  [["kbd", KEY_LEFT], ["kbd", KEY_A],     ["pad", JOY_BUTTON_DPAD_LEFT]],
+	&"move_right": [["kbd", KEY_RIGHT], ["kbd", KEY_D],    ["pad", JOY_BUTTON_DPAD_RIGHT]],
+	&"soft_drop":  [["kbd", KEY_DOWN], ["kbd", KEY_S],     ["pad", JOY_BUTTON_DPAD_DOWN]],
+	&"hard_drop":  [["kbd", KEY_SPACE],                    ["pad", JOY_BUTTON_A]],
+	&"rotate_cw":  [["kbd", KEY_UP], ["kbd", KEY_X],       ["pad", JOY_BUTTON_B]],
+	&"rotate_ccw": [["kbd", KEY_Z],                        ["pad", JOY_BUTTON_X]],
+	&"hold":       [["kbd", KEY_C], ["kbd", KEY_SHIFT],    ["pad", JOY_BUTTON_Y], ["pad", JOY_BUTTON_LEFT_SHOULDER]],
+	&"pause":      [["kbd", KEY_ESCAPE], ["kbd", KEY_P],   ["pad", JOY_BUTTON_START]],
+	&"ui_accept":  [["kbd", KEY_ENTER], ["kbd", KEY_SPACE], ["pad", JOY_BUTTON_A]],
+	&"ui_cancel":  [["kbd", KEY_ESCAPE],                   ["pad", JOY_BUTTON_B]],
+}
+
 static func install() -> void:
 	for action in ACTIONS:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
 		else:
 			InputMap.action_erase_events(action)
-	_bind_keyboard()
-	_bind_gamepad()
+		for ev in default_events_for(action):
+			InputMap.action_add_event(action, ev)
 
-static func _bind_keyboard() -> void:
-	_add_key(&"move_left", KEY_LEFT)
-	_add_key(&"move_left", KEY_A)
-	_add_key(&"move_right", KEY_RIGHT)
-	_add_key(&"move_right", KEY_D)
-	_add_key(&"soft_drop", KEY_DOWN)
-	_add_key(&"soft_drop", KEY_S)
-	_add_key(&"hard_drop", KEY_SPACE)
-	_add_key(&"rotate_cw", KEY_UP)
-	_add_key(&"rotate_cw", KEY_X)
-	_add_key(&"rotate_ccw", KEY_Z)
-	_add_key(&"hold", KEY_C)
-	_add_key(&"hold", KEY_SHIFT)
-	_add_key(&"pause", KEY_ESCAPE)
-	_add_key(&"pause", KEY_P)
-	_add_key(&"ui_accept", KEY_ENTER)
-	_add_key(&"ui_accept", KEY_SPACE)
-	_add_key(&"ui_cancel", KEY_ESCAPE)
+## Return freshly-instantiated default InputEvents for `action`. Callers must
+## not mutate them, but they own the instances so each call is safe.
+static func default_events_for(action: StringName) -> Array[InputEvent]:
+	var out: Array[InputEvent] = []
+	if not _DEFAULTS.has(action):
+		return out
+	for entry in _DEFAULTS[action]:
+		var slot: String = entry[0]
+		var code: int = entry[1]
+		if slot == "kbd":
+			var k := InputEventKey.new()
+			k.keycode = code
+			out.append(k)
+		elif slot == "pad":
+			var b := InputEventJoypadButton.new()
+			b.button_index = code
+			out.append(b)
+	return out
 
-static func _bind_gamepad() -> void:
-	_add_pad(&"move_left", JOY_BUTTON_DPAD_LEFT)
-	_add_pad(&"move_right", JOY_BUTTON_DPAD_RIGHT)
-	_add_pad(&"soft_drop", JOY_BUTTON_DPAD_DOWN)
-	_add_pad(&"hard_drop", JOY_BUTTON_A)
-	_add_pad(&"rotate_cw", JOY_BUTTON_B)
-	_add_pad(&"rotate_ccw", JOY_BUTTON_X)
-	_add_pad(&"hold", JOY_BUTTON_Y)
-	_add_pad(&"hold", JOY_BUTTON_LEFT_SHOULDER)
-	_add_pad(&"pause", JOY_BUTTON_START)
-	_add_pad(&"ui_accept", JOY_BUTTON_A)
-	_add_pad(&"ui_cancel", JOY_BUTTON_B)
+## True iff `event` belongs to the gamepad slot (button or axis motion).
+static func is_pad_event(event: InputEvent) -> bool:
+	return event is InputEventJoypadButton or event is InputEventJoypadMotion
 
-static func _add_key(action: StringName, keycode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	InputMap.action_add_event(action, ev)
-
-static func _add_pad(action: StringName, button: int) -> void:
-	var ev := InputEventJoypadButton.new()
-	ev.button_index = button
-	InputMap.action_add_event(action, ev)
