@@ -25,17 +25,23 @@ func _cfg() -> BreakoutConfig:
 	return c
 
 
+# Levels used by sticky/launch tests must contain at least one destructible
+# brick — otherwise create() seeds mode = WON for degenerate levels.
+func _trivial_level() -> BreakoutLevel:
+	return _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}])
+
+
 # --- Sticky / launch ---
 
 func test_initial_mode_is_sticky() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _trivial_level())
 	assert_eq(s.mode, BreakoutState.Mode.STICKY)
 	assert_eq(s.lives, 3)
 	assert_eq(s.score, 0)
 
 
 func test_launch_leaves_sticky_with_nonzero_velocity() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _trivial_level())
 	s.launch()
 	assert_eq(s.mode, BreakoutState.Mode.LIVE)
 	var speed_sq: float = s.ball_vx * s.ball_vx + s.ball_vy * s.ball_vy
@@ -44,7 +50,7 @@ func test_launch_leaves_sticky_with_nonzero_velocity() -> void:
 
 
 func test_launch_is_idempotent_when_live() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.launch()
 	var vx_before: float = s.ball_vx
 	var vy_before: float = s.ball_vy
@@ -56,7 +62,7 @@ func test_launch_is_idempotent_when_live() -> void:
 # --- Life loss + sticky respawn (acceptance #6) ---
 
 func test_life_loss_respawns_sticky() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.launch()
 	# Place ball below world, descending.
 	s.ball_y = s.config.world_h + 10.0
@@ -77,7 +83,7 @@ func test_life_loss_respawns_sticky() -> void:
 func test_life_loss_at_zero_lives_is_game_over() -> void:
 	var cfg: BreakoutConfig = _cfg()
 	cfg.lives_start = 1
-	var s: BreakoutState = BreakoutState.create(1, cfg, _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, cfg, _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.launch()
 	s.ball_y = s.config.world_h + 10.0
 	s.ball_vx = 0.0
@@ -129,6 +135,24 @@ func test_indestructible_brick_does_not_block_win() -> void:
 	assert_true(s._all_destructibles_cleared())
 
 
+func test_degenerate_level_with_no_destructibles_starts_won() -> void:
+	# A level with zero destructible bricks (all indestructibles, or empty)
+	# never enters the brick-collision branch and so never resolves to WON
+	# via tick(). create() must catch this and seed mode = WON immediately.
+	var lvl: BreakoutLevel = _level_with([
+		{"hp": 99, "value": 0, "destructible": false, "color_id": 0},
+	])
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), lvl)
+	assert_true(s.is_won(), "degenerate level should be WON at create()")
+
+
+func test_empty_level_starts_won() -> void:
+	# Truly empty (zero bricks) is also degenerate.
+	var lvl: BreakoutLevel = _level_with([{"hp": 0}])
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), lvl)
+	assert_true(s.is_won(), "empty level should be WON at create()")
+
+
 # --- Snapshot (acceptance #10) ---
 
 func test_snapshot_has_version_and_drops_destroyed_bricks() -> void:
@@ -152,12 +176,12 @@ func test_snapshot_has_version_and_drops_destroyed_bricks() -> void:
 
 func test_tick_returns_false_on_first_call() -> void:
 	# First tick just aligns the clock — no sub-steps fire.
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	assert_false(s.tick(123))
 
 
 func test_tick_returns_true_when_ball_moves() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.launch()
 	s.tick(0)
 	# 10 ms = 1 sub-step; ball moves.
@@ -167,7 +191,7 @@ func test_tick_returns_true_when_ball_moves() -> void:
 func test_tick_caps_substeps() -> void:
 	# Pass a now_ms 1 second after t=0 → that's 100 sub-steps worth, but
 	# max_steps_per_tick caps at 8. After cap, accum should be drained.
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.tick(0)
 	s.tick(1000)
 	assert_lt(s.accum_ms, s.config.step_dt_ms)
@@ -201,7 +225,7 @@ func test_same_seed_same_inputs_same_state() -> void:
 # --- Paddle intent clamping ---
 
 func test_paddle_intent_clamps_to_max_speed() -> void:
-	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 0}]))
+	var s: BreakoutState = BreakoutState.create(1, _cfg(), _level_with([{"hp": 1, "value": 100, "destructible": true, "color_id": 0}]))
 	s.set_paddle_intent(99999.0)
 	assert_eq(s.paddle_intent_vx, s.config.paddle_max_speed_px_s)
 	s.set_paddle_intent(-99999.0)

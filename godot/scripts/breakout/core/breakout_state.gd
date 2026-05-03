@@ -75,6 +75,9 @@ static func create(game_seed: int, cfg: BreakoutConfig, lvl: BreakoutLevel) -> S
 	s.bricks = _expand_level_to_bricks(lvl)
 	s.mode = Mode.STICKY
 	s._reset_ball_to_sticky()
+	# Degenerate level (no destructibles to clear): start already won.
+	if s._all_destructibles_cleared():
+		s.mode = Mode.WON
 	return s
 
 
@@ -284,14 +287,9 @@ func _step() -> bool:
 		hits.append({"i": i, "depth": d})
 
 	if not hits.is_empty():
-		# Pick the winner. Sort key: (smaller dominant-axis depth) → first.
-		# Equivalently: largest "barely-entered" overlap. Wait — re-read
-		# acceptance #5: "the one with the larger overlap on the dominant
-		# axis". So we want the brick whose DOMINANT-AXIS depth is LARGEST.
-		# (The dominant axis is the one with the SMALLER depth; we then
-		# compare those small depths across bricks and pick the LARGER. In
-		# a true corner sandwich the two bricks share that axis-depth and
-		# the lower idx wins.)
+		# Pick the winner per acceptance #5: largest dominant-axis depth wins;
+		# ties → lower idx. Dominant axis = the SMALLER of (depth_x, depth_y),
+		# i.e. the axis the ball just barely crossed.
 		var winner: int = -1
 		var winner_depth: float = -1.0
 		var winner_axis: String = "x"
@@ -313,7 +311,10 @@ func _step() -> bool:
 				winner = int(h["i"])
 				winner_depth = axis_depth
 				winner_axis = axis
-			# Tie on dominant-axis depth: prefer LOWER index for determinism.
+			# Defensive against future iteration-order changes: lower idx wins
+			# on dominant-axis tie. Unreachable today (hits is built in
+			# increasing index order so the first equal-depth hit already
+			# holds the lowest idx) but kept so the rule survives a refactor.
 			elif is_equal_approx(axis_depth, winner_depth) and int(h["i"]) < winner:
 				winner = int(h["i"])
 				winner_axis = axis
@@ -338,11 +339,13 @@ func _step() -> bool:
 				ball_y = bcy + bhy + br + 0.001
 			ball_vy = -ball_vy
 
-		# Decrement brick hp.
-		var new_hp: int = int(b2["hp"]) - 1
-		b2["hp"] = new_hp
-		if new_hp <= 0 and bool(b2["destructible"]):
-			score += int(b2["value"])
+		# Decrement brick hp — but ONLY if destructible. Indestructible bricks
+		# reflect the ball forever and are never removed from collision.
+		if bool(b2["destructible"]):
+			var new_hp: int = int(b2["hp"]) - 1
+			b2["hp"] = new_hp
+			if new_hp <= 0:
+				score += int(b2["value"])
 		bricks[winner] = b2
 
 		# Check win condition: any destructible bricks left?

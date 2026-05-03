@@ -220,3 +220,40 @@ func test_create_rejects_excessive_ball_speed() -> void:
 	lvl.cells = []
 	var s: BreakoutState = BreakoutState.create(1, cfg, lvl)
 	assert_not_null(s)
+
+
+# --- Indestructible bricks (regression for review feedback) ---
+
+func test_indestructible_brick_keeps_hp_after_many_hits() -> void:
+	# Place an indestructible brick with hp=2. Hit it 5 times. It must keep
+	# its hp, score must stay 0, and it must remain in snapshot().bricks so
+	# it continues to block / reflect.
+	var cfg: BreakoutConfig = BreakoutConfig.new()
+	cfg.ball_speed_start = 100.0
+	var lvl: BreakoutLevel = BreakoutLevel.new()
+	lvl.rows = 1
+	lvl.cols = 1
+	lvl.brick_w = 20.0
+	lvl.brick_h = 10.0
+	lvl.origin_x = 160.0 - 10.0
+	lvl.origin_y = 100.0 - 5.0
+	lvl.cells = [{"hp": 2, "value": 100, "destructible": false, "color_id": 0}]
+	var s: BreakoutState = BreakoutState.create(1, cfg, lvl)
+	# Park ball just above brick top face, moving down.
+	s.ball_x = 160.0
+	s.ball_y = 100.0 - 5.0 - s.config.ball_radius - 0.5
+	s.ball_vx = 0.0
+	s.ball_vy = s.config.ball_speed_start
+	s.mode = BreakoutState.Mode.LIVE
+	# Drive 5 collisions: each tick reflects vy; flip back manually so the
+	# ball keeps slamming into the same brick from above.
+	s.tick(0)
+	for i in 5:
+		s.ball_x = 160.0
+		s.ball_y = 100.0 - 5.0 - s.config.ball_radius - 0.5
+		s.ball_vy = s.config.ball_speed_start
+		s.tick((i + 1) * s.config.step_dt_ms)
+	assert_eq(int(s.bricks[0]["hp"]), 2, "indestructible brick keeps hp")
+	assert_eq(s.score, 0, "no score awarded for hitting indestructible")
+	var snap: Dictionary = s.snapshot()
+	assert_eq((snap["bricks"] as Array).size(), 1, "indestructible still in snapshot")
