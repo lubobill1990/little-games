@@ -8,12 +8,16 @@ The `InputManager` autoload (added in task #2) exposes **semantic actions** so g
 |--------------|----------------|------------------------|--------------------|----------------|
 | `move_left`  | ← / A          | D-pad ← / Left stick ← | D-pad ← / LSx ←    | Swipe / on-screen ← |
 | `move_right` | → / D          | D-pad → / Left stick → | D-pad → / LSx →    | Swipe / on-screen → |
+| `move_up`    | ↑ / W          | D-pad ↑                | D-pad ↑            | Swipe ↑ |
+| `move_down`  | ↓ / S          | D-pad ↓                | D-pad ↓            | Swipe ↓ |
 | `soft_drop`  | ↓ / S          | D-pad ↓                | D-pad ↓            | Hold-down zone |
 | `hard_drop`  | Space          | A                      | Cross              | Tap-up zone    |
 | `rotate_cw`  | ↑ / X          | B                      | Circle             | Right-half tap |
 | `rotate_ccw` | Z              | X                      | Square             | Left-half tap  |
 | `hold`       | C / Shift      | Y / LB                 | Triangle / L1      | Two-finger tap |
 | `pause`      | Esc / P        | Start / Menu           | Options            | Pause button   |
+
+`move_up` and `move_down` are semantic 4-direction equivalents of `move_left`/`move_right` for grid-based games (Snake, 2048). They intentionally share keys with `rotate_cw` (↑) and `soft_drop` (↓); per-game scenes consume only the actions they care about, so the overlap is harmless.
 
 ## DAS / ARR (auto repeat)
 

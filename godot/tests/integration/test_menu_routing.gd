@@ -48,15 +48,14 @@ func test_choosing_tetris_instances_under_game_root_and_hides_menu() -> void:
 	assert_true(active.has_signal(&"exit_requested"), "host has exit_requested")
 
 func test_exit_requested_returns_to_menu_with_no_orphans() -> void:
-	var stub_card: Button = _card_for(&"snake_stub")
-	assert_ne(stub_card, null, "stub card present")
+	var snake_card: Button = _card_for(&"snake")
+	assert_ne(snake_card, null, "snake card present")
 	# Capture orphan-baseline AFTER menu is fully ready (already in tree, populated).
 	var baseline_orphans: int = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
-	stub_card.emit_signal(&"game_chosen", stub_card.descriptor())
+	snake_card.emit_signal(&"game_chosen", snake_card.descriptor())
 	await get_tree().process_frame
 	assert_ne(menu._active_game, null, "game running")
-	# Trigger exit explicitly so the test is deterministic (don't depend on the
-	# stub's auto-exit timer firing inside a fixed frame budget).
+	# Trigger exit explicitly so the test is deterministic.
 	menu._active_game.emit_signal(&"exit_requested")
 	# The handler awaits one frame internally; give it two to fully settle.
 	await get_tree().process_frame

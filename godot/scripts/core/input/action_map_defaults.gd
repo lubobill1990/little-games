@@ -3,13 +3,14 @@ extends Object
 ## `project.godot`'s `[input]` section clean and reviewable here.
 
 const ACTIONS: Array[StringName] = [
-	&"move_left", &"move_right", &"soft_drop", &"hard_drop",
+	&"move_left", &"move_right", &"move_up", &"move_down",
+	&"soft_drop", &"hard_drop",
 	&"rotate_cw", &"rotate_ccw", &"hold", &"pause",
 	&"ui_accept", &"ui_cancel",
 ]
 
 const REPEATABLE: Array[StringName] = [
-	&"move_left", &"move_right",
+	&"move_left", &"move_right", &"move_up", &"move_down",
 ]
 
 # Per-action defaults as (slot, value) pairs. Slot is "kbd" → keycode int, or
@@ -19,6 +20,8 @@ const REPEATABLE: Array[StringName] = [
 const _DEFAULTS: Dictionary = {
 	&"move_left":  [["kbd", KEY_LEFT], ["kbd", KEY_A],     ["pad", JOY_BUTTON_DPAD_LEFT]],
 	&"move_right": [["kbd", KEY_RIGHT], ["kbd", KEY_D],    ["pad", JOY_BUTTON_DPAD_RIGHT]],
+	&"move_up":    [["kbd", KEY_UP], ["kbd", KEY_W],       ["pad", JOY_BUTTON_DPAD_UP]],
+	&"move_down":  [["kbd", KEY_DOWN], ["kbd", KEY_S],     ["pad", JOY_BUTTON_DPAD_DOWN]],
 	&"soft_drop":  [["kbd", KEY_DOWN], ["kbd", KEY_S],     ["pad", JOY_BUTTON_DPAD_DOWN]],
 	&"hard_drop":  [["kbd", KEY_SPACE],                    ["pad", JOY_BUTTON_A]],
 	&"rotate_cw":  [["kbd", KEY_UP], ["kbd", KEY_X],       ["pad", JOY_BUTTON_B]],

@@ -10,7 +10,7 @@ const GameDescriptor := preload("res://scripts/core/game/game_descriptor.gd")
 # Each entry: [id, title, scene_path, icon_path].
 const _GAMES: Array = [
 	[&"tetris", "Tetris", "res://scenes/tetris/tetris.tscn", ""],
-	[&"snake_stub", "Snake (WIP)", "res://scenes/games/snake_stub/snake_stub.tscn", ""],
+	[&"snake", "Snake", "res://scenes/snake/snake.tscn", ""],
 ]
 
 static func all() -> Array:
