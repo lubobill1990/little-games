@@ -23,6 +23,7 @@ Keys are dotted paths. Per-game keys are prefixed with the game's `id` (also use
 | `g2048.best`             | `int`          | 2048-polish (#21)  | 4×4 only in v1 |
 | `breakout.best.level_NN` | `int`          | breakout-polish (#23) | per-level high score |
 | `breakout.best.run`      | `int`          | breakout-polish (#23) | best score across the full level pack |
+| `invaders.best`          | `int`          | invaders-polish (#29) | best score across runs |
 
 Game IDs are intentionally **not** the project name (`2048` would lead with a digit and is awkward to use as a key prefix); the canonical id is `g2048`.
 
