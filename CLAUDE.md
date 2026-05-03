@@ -63,33 +63,40 @@ CI must be green before merge. Same command runs there.
 ```mermaid
 flowchart LR
     Backlog["Backlog<br/>(idea)"]
-    Ready["Ready<br/>(PRD + Dev plan written,<br/>sub-agent reviewed,<br/>refinements folded in)"]
+    Ready["Ready<br/>(PRD + Dev plan written<br/>and unambiguous)"]
     InProgress["In progress<br/>(branch + impl)"]
     InReview["In review<br/>(PR open, CI green)"]
+    ChangesRequested["Changes requested<br/>(reviewer asked for fixes,<br/>author iterating)"]
     Done["Done<br/>(merged on main)"]
 
-    Backlog -->|Claude writes PRD + Dev plan,<br/>then sub-agent review,<br/>then refines| Ready
+    Backlog -->|Claude writes PRD + Dev plan;<br/>sub-agent review optional<br/>(use for complex/uncertain scope)| Ready
     Ready -->|Claude opens branch, codes| InProgress
     InProgress -->|Claude opens PR| InReview
-    InReview -->|human approves & merges| Done
-    InReview -.->|review requests changes| InProgress
+    InReview -->|reviewer (human or skill) approves & merges| Done
+    InReview -.->|review requests changes| ChangesRequested
+    ChangesRequested -->|author pushes fix| InReview
 ```
 
 | State | What it means |
 |---|---|
 | **Backlog** | Issue exists, no PRD/plan yet. |
-| **Ready** | PRD + Dev plan written *and* refined after a sub-agent review. Sittable on the shelf, fully scoped. |
+| **Ready** | PRD + Dev plan written and unambiguous (an implementer can pick it up without asking the author). Sub-agent review is optional — use it when scope is complex or sequencing is non-obvious. |
 | **In progress** | Branch exists, code being written. |
-| **In review** | PR open, CI green, awaiting human. |
+| **In review** | PR open, CI green, awaiting reviewer (human or `gh-pr-review` skill). |
+| **Changes requested** | Reviewer requested changes; author is iterating on the same branch/PR. Goes back to **In review** on the next push. |
 | **Done** | Merged on `main`, CI green on `main`. |
+
+**Reviewers**: a human and the `gh-pr-review` skill have equal authority to approve and merge. The skill enforces its own gates (see `.claude/skills/gh-pr-review/SKILL.md` §4b); a human can override at any time.
+
+**Implementers**: a human and the `implement-task` skill (runs as `weavejamtom`, claims one Ready task per `/loop` tick) have equal authority to take Ready tasks. See `.claude/skills/implement-task/SKILL.md`.
 
 **Hard rules** (Claude must obey, automatically):
 
-1. **Move the card immediately on every transition.** Use `scripts/board.sh <issue> <Backlog|Ready|InProgress|InReview|Done>`. Don't batch.
-2. **Backlog → Ready requires sub-agent review.** Write PRD + Dev plan into the issue body, then spawn a sub-agent (`Plan` or `general-purpose`) to critique both, then fold the feedback in. Only then move to Ready.
+1. **Move the card immediately on every transition.** Use `scripts/board.sh <issue> <Backlog|Ready|InProgress|InReview|ChangesRequested|Done>`. Don't batch.
+2. **Backlog → Ready requires a clear PRD + Dev plan in the issue body.** "Clear" = an implementer can start without asking the author. Sub-agent review (`Plan` or `general-purpose`) is optional — reach for it when scope is complex, sequencing is non-obvious, or you'd otherwise hand-wave edge cases.
 3. **No PR while in Backlog or Ready.** Move to In progress first.
 4. **Done = merged on `main` + CI green on `main`.** Not "approved", not "branch ready".
-5. **Review requests changes → back to In progress.**
+5. **Review requests changes → Changes requested.** Author iterates on the same PR; the next push moves the card back to In review (the implementer / pusher is responsible for that transition).
 6. **Abandoned task → close issue with reason; don't strand the card.**
 
 #### PRD vs. Dev plan
@@ -99,7 +106,7 @@ Both go in the issue body, in labeled sections.
 - **PRD** — *what & why*. Problem, goal, scope, non-goals, acceptance criteria.
 - **Dev plan** — *how*. Files to add/modify, public APIs, test strategy, risks, commit sequence inside the PR.
 
-Sub-agent's job: poke holes in scope, sequencing, missing edge cases, simpler alternatives.
+Sub-agent (when used): poke holes in scope, sequencing, missing edge cases, simpler alternatives.
 
 ### Commits
 
@@ -131,3 +138,20 @@ See `docs/adding-a-game.md`.
 - Don't commit `.godot/` cache or build output (gitignored).
 - Don't open a PR without a backing issue.
 - Don't mark a card Done with red CI.
+
+## 8. Learning log
+
+Goal: don't repeat the same mistake twice. Get smarter over time.
+
+**When to write a learning note.** You hit ≥ 2 failed attempts of the same kind in this session (wrong tool flag, wrong assumption about an API, wrong determinism source, wrong CI invocation, …) before landing on what worked. One-shot fixes don't qualify — only patterns that *cost time* and that future-you would benefit from knowing up front.
+
+**How.**
+
+1. Create `docs/learning/yyyy-mm-dd-<short-english-slug>.md` with two sections:
+   - **Context** — what you were trying to do, what kept failing, why the wrong attempts looked plausible.
+   - **Solution** — what actually worked, and the underlying reason (so the lesson generalizes).
+2. Append one line to `docs/learning/index.md`:
+   `- [yyyy-mm-dd-<slug>.md](yyyy-mm-dd-<slug>.md) — <one-sentence context>. <one-sentence solution>.`
+3. Keep both terse. The note is a tripwire for next time, not a postmortem.
+
+**When to read.** At the start of any task that touches an area you've previously logged about (Godot CI, movie maker, determinism, board automation, …), skim `docs/learning/index.md` first.
