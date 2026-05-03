@@ -19,3 +19,5 @@ Thumbs.db
 # Misc
 *.log
 .tmp/
+# implement-task / gh-pr-review skill scratch
+.lock
