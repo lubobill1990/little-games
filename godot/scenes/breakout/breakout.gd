@@ -18,8 +18,23 @@ const PauseOverlay := preload("res://scenes/breakout/view/pause_overlay.gd")
 const LifeLostOverlay := preload("res://scenes/breakout/view/life_lost_overlay.gd")
 const GameOverOverlay := preload("res://scenes/breakout/view/game_over_overlay.gd")
 const WinOverlay := preload("res://scenes/breakout/view/win_overlay.gd")
+const LevelPack := preload("res://scripts/breakout/level_pack.gd")
+const SfxTones := preload("res://scripts/core/audio/sfx_tones.gd")
+const SfxVolume := preload("res://scripts/core/audio/sfx_volume.gd")
+const Haptics := preload("res://scripts/core/input/haptics.gd")
 
 const DEFAULT_LEVEL_PATH: String = "res://scenes/breakout/levels/level_01.tres"
+const BEST_RUN_KEY: StringName = &"breakout.best.run"
+
+# Haptic tier table per Dev plan: (value_threshold, intensity, duration_ms).
+# First row whose brick.value < threshold wins; last row is the cap.
+const _BRICK_HAPTIC_TIERS: Array = [
+	[50,    0.2,  60],
+	[200,   0.4, 100],
+	[INF,   0.7, 160],
+]
+const _LIFE_LOST_HAPTIC: Array = [0.6, 250]   # [intensity, duration_ms]
+const _LEVEL_CLEAR_HAPTIC: Array = [0.8, 300]
 
 # GameHost contract.
 signal exit_requested()
@@ -51,6 +66,23 @@ var _level_index: int = 1
 var _life_lost_until_ms: int = -1
 var _last_lives: int = -1
 
+# Polish state (issue #23): per-level best, run-score across pack, prior tick
+# brick set + ball velocities for SFX/haptics dispatch.
+var _level_score_offset: int = 0    # Run-score floor when starting current level.
+var _last_brick_set: Dictionary = {}  # idx → hp at previous tick.
+var _last_ball_vx: float = 0.0
+var _last_ball_vy: float = 0.0
+var _level_clear_sfx_played: bool = false
+var _game_over_sfx_played: bool = false
+
+# SFX players, created in _ready.
+var _sfx_paddle: AudioStreamPlayer
+var _sfx_brick: AudioStreamPlayer
+var _sfx_wall: AudioStreamPlayer
+var _sfx_life_lost: AudioStreamPlayer
+var _sfx_level_clear: AudioStreamPlayer
+var _sfx_game_over: AudioStreamPlayer
+
 # Touch tracking. Drag = paddle target; quick tap on lower 25% = launch.
 var _touch_index: int = -1
 var _touch_start: Vector2 = Vector2.ZERO
@@ -65,27 +97,103 @@ func _ready() -> void:
 	life_lost_overlay.visible = false
 	game_over_overlay.visible = false
 	win_overlay.visible = false
+	_setup_sfx()
 	InputManager.action_pressed.connect(_on_action_pressed)
 	game_over_overlay.restart_requested.connect(_on_restart_pressed)
 	game_over_overlay.menu_requested.connect(_on_menu_pressed)
 	pause_overlay.menu_requested.connect(_on_menu_pressed)
+	win_overlay.next_level_requested.connect(_on_next_level_pressed)
 	win_overlay.restart_requested.connect(_on_restart_pressed)
 	win_overlay.menu_requested.connect(_on_menu_pressed)
 	board_host.resized.connect(_recompute_letterbox)
+	if _has_settings():
+		Settings.changed.connect(_on_settings_changed)
+		_apply_sfx_volume()
 	# Standalone launch: auto-start with deterministic seed 0.
 	if get_tree().current_scene == self:
 		start(0)
+
+
+func _setup_sfx() -> void:
+	_sfx_paddle = AudioStreamPlayer.new()
+	_sfx_paddle.stream = SfxTones.tone(330.0, 0.05, 0.4)
+	add_child(_sfx_paddle)
+	_sfx_brick = AudioStreamPlayer.new()
+	# Brick stream is replaced per-event with a value-tuned tone.
+	add_child(_sfx_brick)
+	_sfx_wall = AudioStreamPlayer.new()
+	_sfx_wall.stream = SfxTones.tone(180.0, 0.04, 0.25)
+	add_child(_sfx_wall)
+	_sfx_life_lost = AudioStreamPlayer.new()
+	_sfx_life_lost.stream = SfxTones.tone_sequence([
+		Vector2(220.0, 0.10),
+		Vector2(165.0, 0.18),
+	])
+	add_child(_sfx_life_lost)
+	_sfx_level_clear = AudioStreamPlayer.new()
+	_sfx_level_clear.stream = SfxTones.tone_sequence([
+		Vector2(523.0, 0.08),
+		Vector2(659.0, 0.08),
+		Vector2(784.0, 0.08),
+		Vector2(1047.0, 0.16),
+	])
+	add_child(_sfx_level_clear)
+	_sfx_game_over = AudioStreamPlayer.new()
+	_sfx_game_over.stream = SfxTones.tone_sequence([
+		Vector2(330.0, 0.12),
+		Vector2(247.0, 0.18),
+		Vector2(165.0, 0.30),
+	])
+	add_child(_sfx_game_over)
+
+
+func _has_settings() -> bool:
+	return get_tree().root.has_node("Settings")
+
+
+func _apply_sfx_volume() -> void:
+	if not _has_settings():
+		return
+	var master: float = float(Settings.get_value(&"audio.master", 1.0))
+	var sfx: float = float(Settings.get_value(&"audio.sfx", 1.0))
+	var v: float = SfxVolume.linear_volume(master, sfx)
+	for p in [_sfx_paddle, _sfx_brick, _sfx_wall, _sfx_life_lost, _sfx_level_clear, _sfx_game_over]:
+		if p != null:
+			SfxVolume.set_player_volume(p, v)
+
+
+func _on_settings_changed(key: StringName) -> void:
+	var s: String = String(key)
+	if s == "audio.master" or s == "audio.sfx":
+		_apply_sfx_volume()
 
 # --- GameHost contract ---
 
 func start(seed_value: int = 0) -> void:
 	_seed = seed_value
 	config = BreakoutConfig.new()
-	level = load(DEFAULT_LEVEL_PATH) as BreakoutLevel
-	if level == null:
-		push_error("Breakout: failed to load %s" % DEFAULT_LEVEL_PATH)
+	# Fresh pack run: level 1, no carried score, fresh lives.
+	_level_index = 1
+	_level_score_offset = 0
+	_load_level(_level_index, 0, config.lives_start)
+
+
+## Configure state for `level_idx` (1-based), seeding score and lives carried
+## over from the previous level. Used both by `start()` and by the win →
+## next-level transition.
+func _load_level(level_idx: int, carry_score: int, carry_lives: int) -> void:
+	var path: String = LevelPack.path_for(level_idx)
+	if path == "":
+		push_error("Breakout: no level at index %d (pack size %d)" % [level_idx, LevelPack.size()])
 		return
-	state = BreakoutGameState.create(_seed, config, level)
+	level = load(path) as BreakoutLevel
+	if level == null:
+		push_error("Breakout: failed to load %s" % path)
+		return
+	state = BreakoutGameState.create(_seed + level_idx, config, level)
+	# Carry score + lives across the transition (state.create resets them).
+	state.score = carry_score
+	state.lives = carry_lives
 	world.configure(config.world_w, config.world_h, config.ball_radius, _build_brick_meta())
 	_phase = Phase.PLAYING
 	_logical_now_ms = 0
@@ -95,6 +203,11 @@ func start(seed_value: int = 0) -> void:
 	_life_lost_until_ms = -1
 	_touch_index = -1
 	_touch_world_target_x = -1.0
+	_last_brick_set = _snapshot_brick_set(state.snapshot())
+	_last_ball_vx = state.ball_vx
+	_last_ball_vy = state.ball_vy
+	_level_clear_sfx_played = false
+	_game_over_sfx_played = false
 	pause_overlay.visible = false
 	life_lost_overlay.visible = false
 	game_over_overlay.visible = false
@@ -178,6 +291,9 @@ func _update_views() -> void:
 	if state == null:
 		return
 	var snap: Dictionary = state.snapshot()
+	# Dispatch SFX / haptics before view updates so they're tied to the same
+	# tick as the visible state change.
+	_dispatch_sfx_and_haptics(snap)
 	world.update_from_snapshot(snap)
 	hud.update_from_snapshot(snap, _level_index)
 	# Detect life loss → trigger life-lost overlay.
@@ -187,11 +303,83 @@ func _update_views() -> void:
 		life_lost_overlay.set_lives(lives)
 		life_lost_overlay.visible = true
 		_life_lost_until_ms = _logical_now_ms + LIFE_LOST_OVERLAY_MS
+		# Life-lost SFX + longer haptic pulse.
+		if _sfx_life_lost != null:
+			_sfx_life_lost.play()
+		Haptics.pulse(float(_LIFE_LOST_HAPTIC[0]), int(_LIFE_LOST_HAPTIC[1]))
 	_last_lives = lives
 	var s: int = int(snap.get("score", 0))
 	if s != _last_reported_score:
 		_last_reported_score = s
 		score_reported.emit(s)
+
+
+# Diff `snap.bricks` against `_last_brick_set` to detect destructions; play
+# brick-break SFX / haptic per destruction. Also detect ball-velocity sign
+# flips to play paddle / wall SFX (ball.vy flips up = paddle hit; ball.vx
+# flips = side wall hit; ball.vy flips down on the top wall).
+func _dispatch_sfx_and_haptics(snap: Dictionary) -> void:
+	var current_set: Dictionary = _snapshot_brick_set(snap)
+	# Brick destructions: idx in _last_brick_set with hp > 0 not in current_set.
+	for idx in _last_brick_set.keys():
+		if current_set.has(int(idx)):
+			continue
+		# Brick gone — play break SFX + tier-aware haptic. Look up its value
+		# from `level.cells` (parallel to idx).
+		var v: int = _brick_value_for(int(idx))
+		_play_brick_break_sfx(v)
+		var tier: Dictionary = Haptics.tier_for(v, _BRICK_HAPTIC_TIERS)
+		Haptics.pulse(float(tier["intensity"]), int(tier["duration_ms"]))
+	_last_brick_set = current_set
+	# Wall + paddle hits via velocity sign flips. STICKY mode has the ball
+	# pinned to the paddle so vy=0 — no sign flips happen.
+	var ball: Dictionary = snap.get("ball", {})
+	var vx: float = float(ball.get("vx", 0.0))
+	var vy: float = float(ball.get("vy", 0.0))
+	if int(snap.get("mode", -1)) == BreakoutGameState.Mode.LIVE:
+		# vy flipped from positive to negative → paddle hit (ball was falling,
+		# now rising). vy flipped from negative to positive → top wall hit.
+		if _last_ball_vy > 0.0 and vy < 0.0:
+			if _sfx_paddle != null:
+				_sfx_paddle.play()
+		elif _last_ball_vy < 0.0 and vy > 0.0:
+			if _sfx_wall != null:
+				_sfx_wall.play()
+		# vx sign flip → side wall hit.
+		if signf(_last_ball_vx) != signf(vx) and _last_ball_vx != 0.0 and vx != 0.0:
+			if _sfx_wall != null:
+				_sfx_wall.play()
+	_last_ball_vx = vx
+	_last_ball_vy = vy
+
+
+static func _snapshot_brick_set(snap: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	var bricks: Array = snap.get("bricks", [])
+	for b in bricks:
+		out[int(b.get("idx", -1))] = int(b.get("hp", 0))
+	return out
+
+
+func _brick_value_for(idx: int) -> int:
+	if level == null:
+		return 0
+	if idx < 0 or idx >= level.cells.size():
+		return 0
+	var cell: Variant = level.cells[idx]
+	if not (cell is Dictionary):
+		return 0
+	return int((cell as Dictionary).get("value", 0))
+
+
+func _play_brick_break_sfx(value: int) -> void:
+	if _sfx_brick == null:
+		return
+	# Pitch maps inversely to value: higher-value bricks ring lower (heavier).
+	var v: float = clamp(float(value), 10.0, 500.0)
+	var freq: float = 880.0 - v * 0.8
+	_sfx_brick.stream = SfxTones.tone_chord([freq, freq * 1.5], 0.08, 0.45)
+	_sfx_brick.play()
 
 func _build_brick_meta() -> Dictionary:
 	# Mirror BreakoutGameState._expand_level_to_bricks logic so the renderer
@@ -310,22 +498,85 @@ func _toggle_pause() -> void:
 func _enter_game_over() -> void:
 	_phase = Phase.GAME_OVER
 	life_lost_overlay.visible = false
+	if not _game_over_sfx_played:
+		_game_over_sfx_played = true
+		if _sfx_game_over != null:
+			_sfx_game_over.play()
+	# Persist best for the level the player died on, plus run total.
+	_persist_best_at_death()
 	var snap: Dictionary = state.snapshot()
 	game_over_overlay.show_with(int(snap.get("score", 0)))
 
 func _enter_won() -> void:
 	_phase = Phase.WON
 	life_lost_overlay.visible = false
+	if not _level_clear_sfx_played:
+		_level_clear_sfx_played = true
+		if _sfx_level_clear != null:
+			_sfx_level_clear.play()
+		Haptics.pulse(float(_LEVEL_CLEAR_HAPTIC[0]), int(_LEVEL_CLEAR_HAPTIC[1]))
 	var snap: Dictionary = state.snapshot()
+	_persist_best_at_level_clear(int(snap.get("score", 0)))
+	if _level_index < LevelPack.size():
+		win_overlay.set_mode(WinOverlay.Mode.LEVEL_CLEAR)
+	else:
+		win_overlay.set_mode(WinOverlay.Mode.PACK_COMPLETE)
 	win_overlay.show_with(int(snap.get("score", 0)))
+
+func _on_next_level_pressed() -> void:
+	if state == null:
+		return
+	# Carry score + lives across the transition (level fresh-create resets them).
+	var carry_score: int = state.score
+	var carry_lives: int = state.lives
+	_level_index += 1
+	if _level_index > LevelPack.size():
+		# Defensive: pack-complete should hide the Next button.
+		_on_restart_pressed()
+		return
+	_load_level(_level_index, carry_score, carry_lives)
 
 func _on_restart_pressed() -> void:
 	game_over_overlay.visible = false
 	win_overlay.visible = false
-	start(_seed + 1)
+	# Fresh pack run from level 01 with bumped seed for variety.
+	_seed = _seed + 1
+	_level_index = 1
+	_level_score_offset = 0
+	_load_level(_level_index, 0, BreakoutConfig.new().lives_start)
 
 func _on_menu_pressed() -> void:
 	exit_requested.emit()
 
 func _real_now() -> int:
 	return Time.get_ticks_msec()
+
+
+# --- Persistence (issue #23) ---
+
+
+## On level-clear, persist `breakout.best.level_NN` if the player's score (the
+## *cumulative* run score at clear) beats the stored best. Run-best updates
+## here too because clearing a level produces a strictly better run total than
+## any prior run that ended sooner.
+func _persist_best_at_level_clear(run_score_at_clear: int) -> void:
+	if not _has_settings():
+		return
+	var key: StringName = LevelPack.key_for(_level_index)
+	var prior: int = int(Settings.get_value(key, 0))
+	if run_score_at_clear > prior:
+		Settings.set_value(key, run_score_at_clear)
+	var run_prior: int = int(Settings.get_value(BEST_RUN_KEY, 0))
+	if run_score_at_clear > run_prior:
+		Settings.set_value(BEST_RUN_KEY, run_score_at_clear)
+
+
+## On game-over, persist run-best only (per-level best updates only on actual
+## level clear — dying mid-level doesn't earn a level entry).
+func _persist_best_at_death() -> void:
+	if not _has_settings() or state == null:
+		return
+	var s: int = state.score
+	var run_prior: int = int(Settings.get_value(BEST_RUN_KEY, 0))
+	if s > run_prior:
+		Settings.set_value(BEST_RUN_KEY, s)
