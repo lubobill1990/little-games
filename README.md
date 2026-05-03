@@ -6,7 +6,20 @@ A growing collection of classic games, built with **Godot 4** to play on **web, 
 
 ## Live demo
 
-GitHub Pages deploy lands with task #7. Until then, run locally.
+▶︎ **<https://lubobill1990.github.io/little-games/>** — auto-deployed from `main` after every push.
+
+> First load is ~10 MB (Godot Web runtime + game). Click the canvas after the
+> "Press to play" prompt — browsers require a user gesture before audio/input
+> can start. Web export ships with threading off, so it works on plain GitHub
+> Pages without COOP/COEP headers.
+
+## How to play
+
+1. Open the demo URL above.
+2. Use **arrows / D-pad** to navigate the menu, **Enter / A** to confirm.
+3. In Tetris: **arrows** to move, **↑ / X** to rotate, **Space / A** to hard-drop, **C / Y** to hold, **Esc / Start** to pause.
+
+Native binaries (Windows zip, eventually Android APK) ship as attachments on tagged releases at <https://github.com/lubobill1990/little-games/releases>.
 
 ## Run locally
 

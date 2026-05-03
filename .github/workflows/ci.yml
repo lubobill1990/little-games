@@ -5,12 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+# Pages deploy needs id-token for OIDC; pages: write to publish.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE_BASE: "https://github.com/godotengine/godot/releases/download/4.6.2-stable"
+
 jobs:
   test:
     name: GUT (unit + integration)
     runs-on: ubuntu-latest
-    env:
-      GODOT_VERSION: "4.6.2"
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +34,7 @@ jobs:
         run: |
           mkdir -p ~/godot
           curl -fsSL -o /tmp/godot.zip \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
           unzip -q /tmp/godot.zip -d ~/godot
           mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
           chmod +x ~/godot/godot
@@ -49,3 +57,92 @@ jobs:
           godot --headless --path godot \
             -s addons/gut/gut_cmdln.gd \
             -gconfig=res://.gutconfig.json
+
+  export-web:
+    name: Export Web (Pages)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Serialize Pages deploys (Pages allows one live deployment per environment).
+    # Job-scoped — keeps PR `test` runs from queuing behind a main-branch deploy.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip \
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          chmod +x ~/godot/godot
+
+      - name: Add Godot to PATH
+        run: echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Cache export templates
+        id: templates-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-templates-${{ env.GODOT_VERSION }}-stable
+          restore-keys: |
+            godot-templates-
+
+      - name: Install export templates
+        if: steps.templates-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          curl -fsSL -o /tmp/templates.tpz \
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          # The .tpz is a zip with files at the top level; unzip into the templates dir.
+          unzip -q /tmp/templates.tpz -d /tmp/templates
+          # The zip contains a `templates/` folder; flatten it.
+          mv /tmp/templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Import project
+        run: godot --headless --path godot --import || true
+
+      - name: Build Web export
+        run: |
+          mkdir -p build/web
+          godot --headless --path godot --export-release "Web" ../build/web/index.html
+          ls -lh build/web/
+
+      - name: Add .nojekyll
+        run: touch build/web/.nojekyll
+
+      - name: Smoke-check exported files
+        run: |
+          test -s build/web/index.html
+          test -s build/web/index.wasm
+          test -s build/web/index.pck
+          # The Godot 4.x web template launches via a `Engine` JS object; grep
+          # for it as a sanity guard against future template renames.
+          grep -q 'Engine' build/web/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

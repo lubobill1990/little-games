@@ -2,7 +2,8 @@
 .godot/
 .import/
 export.cfg
-export_presets.cfg
+# export_presets.cfg is checked in (CI needs it for headless exports). It
+# carries no secrets — debug Android keystore lives at ci/debug.keystore.
 
 # Build output
 /build/
