@@ -1,17 +1,11 @@
 extends Control
 ## Tetris top-level scene. Wires InputManager → TetrisGameState → view.
 ##
-## Frame loop:
-##   1. Compute "logical now_ms" (real ms minus time spent in pause / line-clear animation).
-##   2. state.tick(logical_now_ms) — gravity + lock delay.
-##   3. Update views (HUD always; playfield only when redraw needed).
-##
-## Inputs are gated by `_accepts_input`:
-##   - During line-clear animation, move/rotate/hold are buffered (one each) and
-##     applied on resume; hard_drop is dropped on the floor (per Acceptance #5
-##     reword from sub-agent review). Pause is also ignored mid-animation.
-##   - During game over / pause, gameplay inputs do nothing; ui_accept restarts
-##     from game over.
+## Implements the GameHost duck-typed contract (start/pause/resume/teardown +
+## exit_requested signal) so the main menu can launch and reclaim it. When the
+## scene is loaded directly as the project's main_scene, `_ready` calls
+## `start(_fresh_seed())` itself so launching tetris.tscn standalone still
+## works (e.g. integration tests that load the scene directly).
 
 const TetrisGameState := preload("res://scripts/tetris/core/game_state.gd")
 const Playfield := preload("res://scenes/tetris/view/playfield.gd")
@@ -27,6 +21,10 @@ const SETTLE_MS: int = 150
 const ANIM_TOTAL_MS: int = FLASH_MS + SETTLE_MS  # = 250 ms (Acceptance #5).
 
 enum Phase { PLAYING, PAUSED, ANIMATING_FLASH, ANIMATING_SETTLE, GAME_OVER }
+
+# GameHost contract.
+signal exit_requested()
+signal score_reported(value: int)
 
 @onready var playfield: Node2D = $HBox/Playfield
 @onready var hud: VBoxContainer = $HBox/Side/HUD
@@ -44,6 +42,8 @@ var _flash_rows: Array = []
 var _final_score: int = 0
 var _final_lines: int = 0
 var _final_level: int = 0
+var _started: bool = false
+var _last_reported_score: int = -1
 
 # Buffered inputs during animation. Move accumulates as a delta (so multiple
 # left-presses sum), rotate as a sign (last wins), hold as a flag.
@@ -52,17 +52,58 @@ var _buffered_rotate: int = 0
 var _buffered_hold: bool = false
 
 func _ready() -> void:
-	_init_state(_fresh_seed())
 	pause_overlay.visible = false
 	game_over_overlay.visible = false
 	# Subscribe to InputManager. action_pressed/action_repeated handle move repeats;
 	# released doesn't affect tetris (soft-drop is polled per-frame).
 	InputManager.action_pressed.connect(_on_action_pressed)
 	InputManager.action_repeated.connect(_on_action_repeated)
-	_last_real_ms = _real_now()
 	game_over_overlay.restart_requested.connect(_on_restart_pressed)
+	game_over_overlay.menu_requested.connect(_on_menu_pressed)
+	pause_overlay.menu_requested.connect(_on_menu_pressed)
+	# Standalone launch: project main_scene == us. Auto-start so direct loads
+	# (and the existing integration tests) keep working without a wrapper.
+	if get_tree().current_scene == self:
+		start(_fresh_seed())
+
+# --- GameHost contract ---
+
+func start(seed_value: int = 0) -> void:
+	if seed_value == 0:
+		seed_value = _fresh_seed()
+	_init_state(seed_value)
+	_last_real_ms = _real_now()
+	_started = true
+
+func pause() -> void:
+	if _phase == Phase.PLAYING:
+		_phase = Phase.PAUSED
+		pause_overlay.visible = true
+
+func resume() -> void:
+	if _phase == Phase.PAUSED:
+		_phase = Phase.PLAYING
+		pause_overlay.visible = false
+		# Don't credit paused wall-clock time as logical time on resume.
+		_last_real_ms = _real_now()
+
+func teardown() -> void:
+	# Disconnect everything we connected so the host can free us cleanly.
+	if InputManager.action_pressed.is_connected(_on_action_pressed):
+		InputManager.action_pressed.disconnect(_on_action_pressed)
+	if InputManager.action_repeated.is_connected(_on_action_repeated):
+		InputManager.action_repeated.disconnect(_on_action_repeated)
+	if state != null:
+		if state.piece_locked.is_connected(_on_piece_locked):
+			state.piece_locked.disconnect(_on_piece_locked)
+		if state.game_over.is_connected(_on_game_over):
+			state.game_over.disconnect(_on_game_over)
+		state = null
+	_started = false
 
 func _process(delta: float) -> void:
+	if not _started:
+		return
 	var real_now: int = _real_now()
 	var dt: int = max(0, real_now - _last_real_ms)
 	_last_real_ms = real_now
@@ -118,6 +159,7 @@ func _init_state(seed_value: int) -> void:
 	_buffered_rotate = 0
 	_buffered_hold = false
 	_phase = Phase.PLAYING
+	_last_reported_score = -1
 	_update_views()
 
 func _real_now() -> int:
@@ -130,6 +172,10 @@ func _update_views() -> void:
 	hud.update_from(state)
 	next_queue.update_from(state)
 	hold_slot.update_from(state)
+	var s: int = state.score()
+	if s != _last_reported_score:
+		_last_reported_score = s
+		score_reported.emit(s)
 
 # --- Input ---
 
@@ -231,11 +277,12 @@ func _on_restart_pressed() -> void:
 
 func _toggle_pause() -> void:
 	if _phase == Phase.PLAYING:
-		_phase = Phase.PAUSED
-		pause_overlay.visible = true
+		pause()
 	elif _phase == Phase.PAUSED:
-		_phase = Phase.PLAYING
-		pause_overlay.visible = false
+		resume()
+
+func _on_menu_pressed() -> void:
+	exit_requested.emit()
 
 func _resume_after_animation() -> void:
 	_phase = Phase.PLAYING
