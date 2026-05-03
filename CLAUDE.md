@@ -110,6 +110,7 @@ Conventional-ish: `feat: …`, `fix: …`, `test: …`, `chore: …`, `docs: …
 - GDScript, **statically typed** (`var x: int`, `-> void`).
 - Tabs (Godot default).
 - Per-game `core/` must not import `Node` or call OS/Engine APIs. This is the testability contract.
+- Per-game `core/` exposes evolving state via `snapshot() -> Dictionary`; scenes diff snapshots between ticks. Signals reserved for one-shot events (e.g. `piece_locked`, `game_over`). New cores SHOULD include `version: int` in the snapshot. See `docs/persistence.md` and `docs/architecture.md` § "Snapshot diffs, not signals".
 
 ### Tests — three layers, all required
 
