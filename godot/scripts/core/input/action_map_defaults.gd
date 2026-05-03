@@ -5,7 +5,7 @@ extends Object
 const ACTIONS: Array[StringName] = [
 	&"move_left", &"move_right", &"move_up", &"move_down",
 	&"soft_drop", &"hard_drop",
-	&"rotate_cw", &"rotate_ccw", &"hold", &"pause",
+	&"rotate_cw", &"rotate_ccw", &"hold", &"undo", &"pause",
 	&"ui_accept", &"ui_cancel",
 ]
 
@@ -27,6 +27,7 @@ const _DEFAULTS: Dictionary = {
 	&"rotate_cw":  [["kbd", KEY_UP], ["kbd", KEY_X],       ["pad", JOY_BUTTON_B]],
 	&"rotate_ccw": [["kbd", KEY_Z],                        ["pad", JOY_BUTTON_X]],
 	&"hold":       [["kbd", KEY_C], ["kbd", KEY_SHIFT],    ["pad", JOY_BUTTON_Y], ["pad", JOY_BUTTON_LEFT_SHOULDER]],
+	&"undo":       [["kbd", KEY_Z],                        ["pad", JOY_BUTTON_Y]],
 	&"pause":      [["kbd", KEY_ESCAPE], ["kbd", KEY_P],   ["pad", JOY_BUTTON_START]],
 	&"ui_accept":  [["kbd", KEY_ENTER], ["kbd", KEY_SPACE], ["pad", JOY_BUTTON_A]],
 	&"ui_cancel":  [["kbd", KEY_ESCAPE],                   ["pad", JOY_BUTTON_B]],

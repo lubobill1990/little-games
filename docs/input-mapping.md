@@ -15,9 +15,12 @@ The `InputManager` autoload (added in task #2) exposes **semantic actions** so g
 | `rotate_cw`  | ↑ / X          | B                      | Circle             | Right-half tap |
 | `rotate_ccw` | Z              | X                      | Square             | Left-half tap  |
 | `hold`       | C / Shift      | Y / LB                 | Triangle / L1      | Two-finger tap |
+| `undo`       | Z              | Y                      | Triangle           | (HUD button)   |
 | `pause`      | Esc / P        | Start / Menu           | Options            | Pause button   |
 
 `move_up` and `move_down` are semantic 4-direction equivalents of `move_left`/`move_right` for grid-based games (Snake, 2048). They intentionally share keys with `rotate_cw` (↑) and `soft_drop` (↓); per-game scenes consume only the actions they care about, so the overlap is harmless.
+
+`undo` shares its keyboard default (Z) with `rotate_ccw` and its gamepad default (Y / Triangle) with `hold`. Same rationale: 2048 listens for `undo`, Tetris listens for `rotate_ccw` / `hold` — actions don't compete unless a single scene subscribes to both, which none do.
 
 ## DAS / ARR (auto repeat)
 

@@ -22,6 +22,20 @@ const Game2048State := preload("res://scripts/g2048/core/g2048_state.gd")
 const Planner := preload("res://scripts/g2048/core/g2048_planner.gd")
 const TileScript := preload("res://scenes/g2048/view/tile.gd")
 const Palette := preload("res://scripts/g2048/tile_palette.gd")
+const SfxTones := preload("res://scripts/core/audio/sfx_tones.gd")
+const SfxVolume := preload("res://scripts/core/audio/sfx_volume.gd")
+const Haptics := preload("res://scripts/core/input/haptics.gd")
+
+const BEST_KEY: StringName = &"g2048.best"
+
+# Haptic tier table per Dev plan: (value_threshold, intensity, duration_ms).
+# First row whose merged value is < threshold wins; last row is the cap.
+const _HAPTIC_TIERS: Array = [
+	[16,    0.2,  60],
+	[128,   0.4, 100],
+	[1024,  0.6, 140],
+	[INF,   0.9, 200],
+]
 
 # GameHost contract.
 signal exit_requested()
@@ -72,21 +86,85 @@ var _win_shown: bool = false
 var _touch_index: int = -1
 var _touch_start: Vector2 = Vector2.ZERO
 
+# Polish state (issue #21): undo + sfx + best.
+# `_last_snapshot` holds the pre-commit state.snapshot() captured immediately
+# before each successful state.commit(). Empty Dictionary == no undo available.
+var _last_snapshot: Dictionary = {}
+var _best_score: int = 0
+# Once the player has won (reached the target tile), don't replay the jingle
+# every move — cap to one play per session.
+var _2048_sfx_played: bool = false
+
+# SFX players. Created in _ready, streams cached.
+var _sfx_slide: AudioStreamPlayer
+var _sfx_merge: AudioStreamPlayer
+var _sfx_2048: AudioStreamPlayer
+var _sfx_over: AudioStreamPlayer
+
 
 func _ready() -> void:
 	pause_overlay.visible = false
 	game_over_overlay.visible = false
 	win_overlay.visible = false
+	_setup_sfx()
 	InputManager.action_pressed.connect(_on_action_pressed)
 	game_over_overlay.restart_requested.connect(_on_restart_pressed)
 	game_over_overlay.menu_requested.connect(_on_menu_pressed)
 	pause_overlay.menu_requested.connect(_on_menu_pressed)
 	win_overlay.continue_requested.connect(_on_continue_pressed)
 	win_overlay.menu_requested.connect(_on_menu_pressed)
+	hud.undo_pressed.connect(_on_undo_invoked)
+	if _has_settings():
+		Settings.changed.connect(_on_settings_changed)
+		_apply_sfx_volume()
 	# Standalone launch (project main scene == us, or scene loaded directly
 	# in a test). Tests override state via start() afterwards.
 	if get_tree().current_scene == self:
 		start(0)
+
+
+func _setup_sfx() -> void:
+	_sfx_slide = AudioStreamPlayer.new()
+	_sfx_slide.stream = SfxTones.tone(220.0, 0.06, 0.4)
+	add_child(_sfx_slide)
+	_sfx_merge = AudioStreamPlayer.new()
+	# Merge stream is replaced per-event with a freshly-tuned tone (tier-aware).
+	add_child(_sfx_merge)
+	_sfx_2048 = AudioStreamPlayer.new()
+	_sfx_2048.stream = SfxTones.tone_sequence([
+		Vector2(523.0, 0.10),
+		Vector2(659.0, 0.10),
+		Vector2(784.0, 0.16),
+	])
+	add_child(_sfx_2048)
+	_sfx_over = AudioStreamPlayer.new()
+	_sfx_over.stream = SfxTones.tone_sequence([
+		Vector2(330.0, 0.12),
+		Vector2(247.0, 0.18),
+		Vector2(165.0, 0.30),
+	])
+	add_child(_sfx_over)
+
+
+func _has_settings() -> bool:
+	return get_tree().root.has_node("Settings")
+
+
+func _apply_sfx_volume() -> void:
+	if not _has_settings():
+		return
+	var master: float = float(Settings.get_value(&"audio.master", 1.0))
+	var sfx: float = float(Settings.get_value(&"audio.sfx", 1.0))
+	var v: float = SfxVolume.linear_volume(master, sfx)
+	for p in [_sfx_slide, _sfx_merge, _sfx_2048, _sfx_over]:
+		if p != null:
+			SfxVolume.set_player_volume(p, v)
+
+
+func _on_settings_changed(key: StringName) -> void:
+	var s: String = String(key)
+	if s == "audio.master" or s == "audio.sfx":
+		_apply_sfx_volume()
 
 
 # --- GameHost contract ---
@@ -100,7 +178,9 @@ func start(seed_value: int = 0) -> void:
 	_input_gate_open = true
 	_buffered_dir = -1
 	_win_shown = false
+	_2048_sfx_played = false
 	_last_reported_score = -1
+	_last_snapshot = {}
 	pause_overlay.visible = false
 	game_over_overlay.visible = false
 	win_overlay.visible = false
@@ -115,6 +195,10 @@ func start(seed_value: int = 0) -> void:
 	grid_view.configure(config.size, CELL_PX, GAP_PX)
 	# Sync tile mirror to current grid (the two starter tiles).
 	_sync_tiles_from_state(true)
+	# Load best from Settings (0 if absent), push to HUD.
+	_best_score = _load_best()
+	hud.update_best(_best_score)
+	hud.set_undo_enabled(false)
 	_emit_score_if_changed()
 
 
@@ -171,6 +255,9 @@ func _any_tile_animating() -> bool:
 func _on_action_pressed(action: StringName) -> void:
 	if action == &"pause":
 		_toggle_pause()
+		return
+	if action == &"undo":
+		_on_undo_invoked()
 		return
 	if pause_overlay.visible:
 		return
@@ -234,11 +321,14 @@ func _apply_direction(dir: int) -> void:
 	if p == null or p.is_empty():
 		# No-op move: gate stays open, no animation, no spawn.
 		return
+	# Capture pre-commit snapshot for undo BEFORE state mutates.
+	_last_snapshot = state.snapshot()
 	# Close the gate and seed animations BEFORE commit, so we know which
 	# pre-state cells the surviving / dying tiles came from.
 	_input_gate_open = false
 	# Snapshot the pre-commit grid so we can rebuild missing tiles after
 	# replays / state restoration.
+	var max_merge_value: int = 0
 	for m in p.moves:
 		var tm: Planner.TileMove = m
 		var tile: TileScript = _ensure_tile_for(tm.id)
@@ -253,11 +343,25 @@ func _apply_direction(dir: int) -> void:
 		tile.set_meta(&"post_value", tm.new_value)
 		tile.set_meta(&"to_cell", tm.to_cell)
 		tile.set_meta(&"is_merge_survivor", tm.merged_into == -1 and _is_merge_survivor(p, tm))
+		# Track the largest merge for tier-aware sfx + haptic.
+		if tm.merged_into == -1 and _is_merge_survivor(p, tm):
+			if tm.new_value > max_merge_value:
+				max_merge_value = tm.new_value
 	# Commit the move: state mutates, score updates, new tile spawns.
 	state.commit(p)
+	# SFX: every non-empty plan plays a slide blip; merges escalate with tier.
+	_play_slide_sfx()
+	if max_merge_value > 0:
+		_play_merge_sfx(max_merge_value)
+		var tier: Dictionary = Haptics.tier_for(max_merge_value, _HAPTIC_TIERS)
+		Haptics.pulse(float(tier["intensity"]), int(tier["duration_ms"]))
 	# Sync new spawn (id present in state but not in our mirror) with fade-in.
 	_sync_tiles_from_state(false)
 	_emit_score_if_changed()
+	# Update best on every score change.
+	_update_best()
+	# A successful, non-empty commit refills the undo charge.
+	hud.set_undo_enabled(not _last_snapshot.is_empty())
 
 
 # A "merge survivor" is a TileMove where the planner recorded another
@@ -297,16 +401,25 @@ func _finish_animation_round() -> void:
 	if state != null and state.is_won() and not _win_shown:
 		_win_shown = true
 		_phase = Phase.WON_CONTINUING
+		if not _2048_sfx_played:
+			_2048_sfx_played = true
+			if _sfx_2048 != null:
+				_sfx_2048.play()
 		win_overlay.show_with(int(state.snapshot().get("score", 0)))
 		# Don't reopen the gate while the win overlay is visible; it gets
 		# reopened in _on_continue_pressed.
+		hud.set_undo_enabled(false)
 		return
 	# Game-over check (acceptance #6).
 	if state != null and state.is_lost():
 		_phase = Phase.GAME_OVER
+		if _sfx_over != null:
+			_sfx_over.play()
 		game_over_overlay.show_with(int(state.snapshot().get("score", 0)))
+		hud.set_undo_enabled(false)
 		return
 	_input_gate_open = true
+	hud.set_undo_enabled(_can_undo())
 
 
 # --- Tile pool ---
@@ -401,7 +514,81 @@ func _on_continue_pressed() -> void:
 	# moves don't re-show this overlay.
 	_phase = Phase.WON_CONTINUING
 	_input_gate_open = true
+	hud.set_undo_enabled(_can_undo())
 
 
 func _on_menu_pressed() -> void:
 	exit_requested.emit()
+
+
+# --- Polish helpers (issue #21) ---
+
+
+func _can_undo() -> bool:
+	if _last_snapshot.is_empty():
+		return false
+	if not _input_gate_open:
+		return false
+	if pause_overlay.visible or win_overlay.visible or game_over_overlay.visible:
+		return false
+	return true
+
+
+## Restore _last_snapshot to state, rebuild tile mirror, clear undo charge.
+## Bound to both `undo` action and the HUD button.
+func _on_undo_invoked() -> void:
+	if not _can_undo():
+		return
+	state = Game2048State.from_snapshot(_last_snapshot)
+	_last_snapshot = {}
+	# Wipe tile mirror — `_sync_tiles_from_state(true)` snaps every restored
+	# tile to its restored cell with no animation, which is exactly what we
+	# want after an undo (no slide/pop fanfare).
+	for id in _tile_nodes.keys():
+		var t: Node2D = _tile_nodes[id]
+		t.visible = false
+		_tile_pool.append(t)
+	_tile_nodes.clear()
+	_sync_tiles_from_state(true)
+	_emit_score_if_changed()
+	hud.set_undo_enabled(false)
+
+
+func _play_slide_sfx() -> void:
+	if _sfx_slide == null:
+		return
+	_sfx_slide.play()
+
+
+func _play_merge_sfx(merged_value: int) -> void:
+	if _sfx_merge == null:
+		return
+	# Merged values are powers of 2 starting at 4. Map exponent → frequency:
+	# higher tiles ring at lower pitch (heavier feel).
+	var exp: float = clamp(log(float(merged_value)) / log(2.0), 2.0, 14.0)
+	var freq: float = 880.0 - 50.0 * (exp - 2.0)
+	_sfx_merge.stream = SfxTones.tone_chord([freq, freq * 1.5], 0.10, 0.5)
+	_sfx_merge.play()
+
+
+func _load_best() -> int:
+	if not _has_settings():
+		return 0
+	return int(Settings.get_value(BEST_KEY, 0))
+
+
+func _save_best(value: int) -> void:
+	if not _has_settings():
+		return
+	Settings.set_value(BEST_KEY, value)
+
+
+## Push the current score to `g2048.best` if higher, and refresh the HUD label.
+func _update_best() -> void:
+	if state == null:
+		return
+	var s: int = int(state.snapshot().get("score", 0))
+	if s > _best_score:
+		_best_score = s
+		_save_best(_best_score)
+		hud.update_best(_best_score)
