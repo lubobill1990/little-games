@@ -1,0 +1,82 @@
+name: e2e
+
+# Manual + nightly only — never gated on PR CI. Movie maker is rendering-heavy
+# (~1–2 min on xvfb at 60 fps) and the artifact is for human review, not for
+# automated pass/fail.
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Tetris RNG seed (int)"
+        required: false
+        default: "4242"
+      max_pieces:
+        description: "Cap on pieces played (int)"
+        required: false
+        default: "200"
+      mp4:
+        description: "Also produce mp4 (1 = yes)"
+        required: false
+        default: "0"
+  schedule:
+    # 06:23 UTC daily — off the hour to avoid the cron stampede.
+    - cron: "23 6 * * *"
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE_BASE: "https://github.com/godotengine/godot/releases/download/4.6.2-stable"
+
+jobs:
+  record:
+    name: Tetris e2e replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Install Godot ${{ env.GODOT_VERSION }}
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip \
+            "${GODOT_RELEASE_BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          chmod +x ~/godot/godot
+
+      - name: Add Godot to PATH
+        run: echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Install xvfb + ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends xvfb ffmpeg
+
+      - name: Import project
+        run: godot --headless --path godot --import || true
+
+      - name: Run e2e replay
+        env:
+          E2E_MP4: ${{ github.event.inputs.mp4 || '0' }}
+        run: |
+          SEED="${{ github.event.inputs.seed || '4242' }}"
+          MAXP="${{ github.event.inputs.max_pieces || '200' }}"
+          scripts/e2e/run.sh tetris "$SEED" --max-pieces="$MAXP"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-tetris-${{ github.event.inputs.seed || '4242' }}
+          path: build/e2e/
+          retention-days: 14

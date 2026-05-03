@@ -118,6 +118,8 @@ Conventional-ish: `feat: …`, `fix: …`, `test: …`, `chore: …`, `docs: …
 2. **Scene** — input → core → render. Use `Input.parse_input_event`.
 3. **Integration** — scripted, deterministic-seed sessions. `tests/integration/`.
 
+A fourth layer, **e2e-replay**, is manual / nightly only (not gated on PR CI): a scripted heuristic AI plays a full session and records video for human spot-check. See `docs/e2e-replay.md`.
+
 ## 6. Adding a new game
 
 See `docs/adding-a-game.md`.
