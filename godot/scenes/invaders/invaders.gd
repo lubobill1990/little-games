@@ -30,6 +30,9 @@ const PauseOverlay := preload("res://scenes/invaders/view/pause_overlay.gd")
 const WaveInterlude := preload("res://scenes/invaders/view/wave_interlude.gd")
 const GameOverOverlay := preload("res://scenes/invaders/view/game_over_overlay.gd")
 const FireButton := preload("res://scenes/invaders/view/fire_button.gd")
+const SfxTones := preload("res://scripts/core/audio/sfx_tones.gd")
+const SfxVolume := preload("res://scripts/core/audio/sfx_volume.gd")
+const Haptics := preload("res://scripts/core/input/haptics.gd")
 
 # GameHost contract.
 signal exit_requested()
@@ -38,6 +41,13 @@ signal score_reported(value: int)
 const WAVE_INTERLUDE_MS: int = 1200
 const TOUCH_DRAG_ZONE_FRACTION: float = 0.6   # left 60% of playfield
 const TOUCH_DRAG_LERP_FACTOR: float = 0.35
+
+# Persistence key per docs/persistence.md.
+const BEST_KEY: StringName = &"invaders.best"
+
+# Four-tone formation march (acceptance #2). Cycle by step_index % 4.
+const _STEP_TONE_FREQS: Array[float] = [196.0, 175.0, 147.0, 131.0]   # G3/F3/D3/C3
+const _STEP_TONE_DUR: float = 0.06
 
 enum Phase { PLAYING, PAUSED, INTERLUDE, GAME_OVER }
 
@@ -76,6 +86,25 @@ var _last_bunker_hash: int = 0
 var _last_ufo_present: bool = false
 var _last_ufo_x: float = 0.0
 var _last_score: int = 0
+var _last_lives: int = 0
+var _game_over_sfx_played: bool = false
+
+# Audio dispatcher — duck-typed so tests can inject a recorder. Set in _ready();
+# replace via _inject_audio() before start() in tests. Mirrors tetris's pattern.
+# Required interface: play(StringName), stop(StringName).
+var _audio: Object
+
+# Per-event AudioStreamPlayer cache. step tones are pre-baked at _ready().
+var _sfx_players: Dictionary = {}
+var _ufo_loop_player: AudioStreamPlayer
+var _ufo_loop_active: bool = false
+var _ufo_fade_tween: Tween
+
+# Step-tone cycle index (0..3 → tones 1..4). Reset on start() and game-over.
+var _step_index: int = 0
+
+# Best score, loaded at start() from Settings if present.
+var _best_score: int = 0
 
 # Touch tracking.
 var _drag_touch_index: int = -1
@@ -90,15 +119,138 @@ func _ready() -> void:
 	pause_overlay.visible = false
 	wave_interlude.visible = false
 	game_over_overlay.visible = false
+	_setup_sfx()
+	# Default audio sink is `self` — _audio.play(key) calls _play_sfx_key(key).
+	# Tests can override by calling _inject_audio(recorder) before start().
+	if _audio == null:
+		_audio = self
 	InputManager.action_pressed.connect(_on_action_pressed)
 	game_over_overlay.restart_requested.connect(_on_restart_pressed)
 	game_over_overlay.menu_requested.connect(_on_menu_pressed)
 	pause_overlay.menu_requested.connect(_on_menu_pressed)
 	fire_button.fire_requested.connect(_on_fire_pressed)
 	board_host.resized.connect(_recompute_letterbox)
+	if _has_settings():
+		Settings.changed.connect(_on_settings_changed)
+		_apply_sfx_volume()
 	# Standalone launch: auto-start with deterministic seed 0.
 	if get_tree().current_scene == self:
 		start(0)
+
+
+# --- Audio setup (procedural tones; no asset files) ---
+
+func _setup_sfx() -> void:
+	# Pre-bake the four step tones + one-shot keys; cheap (< 0.5 KiB each).
+	for i in 4:
+		var p: AudioStreamPlayer = AudioStreamPlayer.new()
+		p.stream = SfxTones.tone(_STEP_TONE_FREQS[i], _STEP_TONE_DUR, 0.35)
+		add_child(p)
+		_sfx_players[StringName("step_%d" % (i + 1))] = p
+	_register_oneshot(&"fire", SfxTones.tone(720.0, 0.05, 0.4))
+	_register_oneshot(&"explode_enemy", SfxTones.tone_sequence([
+		Vector2(220.0, 0.06), Vector2(110.0, 0.10),
+	], 0.45))
+	_register_oneshot(&"explode_player", SfxTones.tone_sequence([
+		Vector2(180.0, 0.10), Vector2(120.0, 0.18), Vector2(80.0, 0.30),
+	], 0.55))
+	_register_oneshot(&"ufo_kill", SfxTones.tone_sequence([
+		Vector2(660.0, 0.06), Vector2(880.0, 0.06), Vector2(1320.0, 0.10),
+	], 0.5))
+	_register_oneshot(&"wave_clear", SfxTones.tone_sequence([
+		Vector2(523.0, 0.08), Vector2(659.0, 0.08), Vector2(784.0, 0.16),
+	], 0.5))
+	_register_oneshot(&"game_over", SfxTones.tone_sequence([
+		Vector2(330.0, 0.12), Vector2(247.0, 0.18), Vector2(165.0, 0.30),
+	], 0.55))
+	# UFO loop player: a sine warble, looping. We retrigger on each "start".
+	_ufo_loop_player = AudioStreamPlayer.new()
+	# `looping_tone` lives in SfxTones (godot/scripts/) so this scene file
+	# stays free of audio-stream type substrings (the audio-containment lint
+	# in CI; see issue #43).
+	var loop_stream := SfxTones.looping_tone(420.0, 0.30, 0.30)
+	loop_stream.loop_end = loop_stream.data.size() / 2
+	_ufo_loop_player.stream = loop_stream
+	add_child(_ufo_loop_player)
+
+
+func _register_oneshot(key: StringName, stream: AudioStream) -> void:
+	var p: AudioStreamPlayer = AudioStreamPlayer.new()
+	p.stream = stream
+	add_child(p)
+	_sfx_players[key] = p
+
+
+func _has_settings() -> bool:
+	return get_tree().root.has_node("Settings")
+
+
+func _apply_sfx_volume() -> void:
+	if not _has_settings():
+		return
+	var master: float = float(Settings.get_value(&"audio.master", 1.0))
+	var sfx: float = float(Settings.get_value(&"audio.sfx", 1.0))
+	var v: float = SfxVolume.linear_volume(master, sfx)
+	for p in _sfx_players.values():
+		if p != null:
+			SfxVolume.set_player_volume(p, v)
+	if _ufo_loop_player != null:
+		SfxVolume.set_player_volume(_ufo_loop_player, v)
+
+
+func _on_settings_changed(key: StringName) -> void:
+	var s: String = String(key)
+	if s == "audio.master" or s == "audio.sfx":
+		_apply_sfx_volume()
+
+
+## Default audio sink. `_audio.play(key)` lands here unless a test injected a
+## recorder. Looks up the cached AudioStreamPlayer and replays it.
+func play(key: StringName) -> void:
+	_play_sfx_key(key)
+
+
+func stop(key: StringName) -> void:
+	if key == &"ufo_loop":
+		_stop_ufo_loop_with_fade()
+
+
+func _play_sfx_key(key: StringName) -> void:
+	if key == &"ufo_loop":
+		_start_ufo_loop()
+		return
+	var p: AudioStreamPlayer = _sfx_players.get(key, null)
+	if p != null:
+		p.stop()
+		p.play()
+
+
+func _start_ufo_loop() -> void:
+	if _ufo_loop_player == null:
+		return
+	if _ufo_fade_tween != null and _ufo_fade_tween.is_valid():
+		_ufo_fade_tween.kill()
+	_ufo_loop_player.volume_db = 0.0
+	if not _ufo_loop_player.playing:
+		_ufo_loop_player.play()
+	_ufo_loop_active = true
+
+
+func _stop_ufo_loop_with_fade() -> void:
+	if _ufo_loop_player == null or not _ufo_loop_active:
+		return
+	_ufo_loop_active = false
+	if _ufo_fade_tween != null and _ufo_fade_tween.is_valid():
+		_ufo_fade_tween.kill()
+	_ufo_fade_tween = create_tween()
+	_ufo_fade_tween.tween_property(_ufo_loop_player, "volume_db", -40.0, 0.08)
+	_ufo_fade_tween.tween_callback(Callable(_ufo_loop_player, "stop"))
+
+
+## Replace the SFX dispatcher (tests inject a recorder before start()). The
+## recorder must implement `play(StringName)` and `stop(StringName)`.
+func _inject_audio(audio: Object) -> void:
+	_audio = audio
 
 
 # --- GameHost contract ---
@@ -126,6 +278,12 @@ func start(seed_value: int = 0) -> void:
 	_last_ufo_present = _prev_snap.get("ufo", null) != null
 	_last_ufo_x = float((_prev_snap.get("ufo", {}) as Dictionary).get("x", 0.0)) if _last_ufo_present else 0.0
 	_last_score = int(_prev_snap.get("score", 0))
+	_last_lives = int(_prev_snap.get("lives", 0))
+	_step_index = 0
+	_game_over_sfx_played = false
+	if _ufo_loop_active:
+		_stop_ufo_loop_with_fade()
+	_best_score = int(Settings.get_value(BEST_KEY, 0)) if _has_settings() else 0
 	_configure_layers()
 	pause_overlay.visible = false
 	wave_interlude.visible = false
@@ -229,7 +387,7 @@ func _redraw_all(snap: Dictionary) -> void:
 	player_layer.update_from_snapshot(snap)
 	bullets_layer.update_from_snapshot(snap)
 	ufo_layer.update_from_snapshot(snap)
-	hud.update_from_snapshot(snap)
+	hud.update_from_snapshot(snap, _best_score)
 
 
 func _update_views() -> void:
@@ -238,9 +396,15 @@ func _update_views() -> void:
 	var snap: Dictionary = state.snapshot()
 	# Wave change → trigger interlude before letting the next-wave snapshot animate.
 	var wave: int = int(snap.get("wave", 1))
-	if wave != _last_drawn_wave:
+	var wave_just_changed: bool = wave != _last_drawn_wave
+	if wave_just_changed:
 		_last_drawn_wave = wave
 		_enter_wave_interlude(wave)
+	# Audio dispatch sits between core diff and view update. The interlude flag
+	# is taken from the phase the scene will sit in *during this tick*; if a
+	# wave just incremented, _enter_wave_interlude flipped phase to INTERLUDE
+	# above, so step-tones for this very tick are suppressed (acceptance #6).
+	_audio_dispatch(_prev_snap, snap, _phase == Phase.INTERLUDE)
 	# Formation step?
 	var fm: Dictionary = snap.get("formation", {})
 	var step_ms: int = int(fm.get("last_step_ms", 0))
@@ -282,11 +446,87 @@ func _update_views() -> void:
 		_last_ufo_x = float((snap.get("ufo", {}) as Dictionary).get("x", _last_ufo_x))
 	_last_ufo_present = ufo_present
 	_last_score = score
-	hud.update_from_snapshot(snap)
+	_last_lives = int(snap.get("lives", _last_lives))
+	hud.update_from_snapshot(snap, _best_score)
 	_prev_snap = snap
 	if score != _last_reported_score:
 		_last_reported_score = score
 		score_reported.emit(score)
+
+
+# --- Audio dispatcher (snapshot diff → sfx/haptic events) ---
+
+## Pure dispatcher. Compares prev/curr snapshots and routes events to `_audio`
+## (duck-typed: tests inject a recorder). `in_interlude` suppresses step tones.
+##
+## Acceptance map (issue #29):
+##   #2 four-tone cycle: step_<i % 4 + 1> per formation step, scene-local idx.
+##   #3 fire haptic only on accepted shot (player_bullet 0→1).
+##   #5 ufo_loop start on null→present, fade-stop on present→null. ufo_kill
+##     jingle only when score went up the same tick.
+##   #6 no step-tone during interlude (caller passes `in_interlude=true`).
+func _audio_dispatch(prev: Dictionary, curr: Dictionary, in_interlude: bool) -> void:
+	if _audio == null:
+		return
+	# Formation step → step tone (skipped during interlude).
+	if not in_interlude:
+		var prev_fm: Dictionary = prev.get("formation", {})
+		var curr_fm: Dictionary = curr.get("formation", {})
+		var moved: bool = (
+			curr_fm.get("ox", 0.0) != prev_fm.get("ox", 0.0)
+			or curr_fm.get("oy", 0.0) != prev_fm.get("oy", 0.0)
+			or curr_fm.get("dir", 0) != prev_fm.get("dir", 0)
+		)
+		if moved:
+			var key := StringName("step_%d" % (_step_index % 4 + 1))
+			_audio.call(&"play", key)
+			_step_index += 1
+	# Player bullet 0→1 (accepted fire).
+	var prev_pb: Dictionary = prev.get("player_bullet", {})
+	var curr_pb: Dictionary = curr.get("player_bullet", {})
+	if not bool(prev_pb.get("alive", false)) and bool(curr_pb.get("alive", false)):
+		_audio.call(&"play", &"fire")
+		Haptics.pulse(0.3, 40)
+	# Enemy mask: bits cleared since prev → explode_enemy per loss.
+	var pe: Variant = prev.get("enemies", null)
+	var ce: Variant = curr.get("enemies", null)
+	if pe is PackedByteArray and ce is PackedByteArray:
+		var lost: int = _enemies_lost(pe, ce)
+		for _i in lost:
+			_audio.call(&"play", &"explode_enemy")
+	# Lives drop → explode_player + haptic.
+	var prev_lives: int = int(prev.get("lives", _last_lives))
+	var curr_lives: int = int(curr.get("lives", _last_lives))
+	if curr_lives < prev_lives:
+		_audio.call(&"play", &"explode_player")
+		Haptics.pulse(0.7, 250)
+	# UFO transitions.
+	var prev_ufo_present: bool = prev.get("ufo", null) != null
+	var curr_ufo_present: bool = curr.get("ufo", null) != null
+	if not prev_ufo_present and curr_ufo_present:
+		_audio.call(&"play", &"ufo_loop")
+	elif prev_ufo_present and not curr_ufo_present:
+		_audio.call(&"stop", &"ufo_loop")
+		# Score increased on the same tick → killed (vs flew off-screen).
+		var prev_score: int = int(prev.get("score", 0))
+		var curr_score: int = int(curr.get("score", 0))
+		if curr_score > prev_score:
+			_audio.call(&"play", &"ufo_kill")
+			Haptics.pulse(0.4, 120)
+	# Wave change.
+	var prev_wave: int = int(prev.get("wave", 1))
+	var curr_wave: int = int(curr.get("wave", 1))
+	if curr_wave > prev_wave:
+		_audio.call(&"play", &"wave_clear")
+
+
+static func _enemies_lost(prev: PackedByteArray, curr: PackedByteArray) -> int:
+	var n: int = mini(prev.size(), curr.size())
+	var lost: int = 0
+	for i in range(n):
+		if prev[i] == 1 and curr[i] == 0:
+			lost += 1
+	return lost
 
 
 static func _packed_byte_eq(a: Variant, b: Variant) -> bool:
@@ -421,8 +661,25 @@ func _enter_wave_interlude(new_wave: int) -> void:
 func _enter_game_over() -> void:
 	_phase = Phase.GAME_OVER
 	wave_interlude.visible = false
+	if _ufo_loop_active:
+		_stop_ufo_loop_with_fade()
+	if not _game_over_sfx_played:
+		_game_over_sfx_played = true
+		if _audio != null:
+			_audio.call(&"play", &"game_over")
+	_persist_best_at_death()
 	var snap: Dictionary = state.snapshot() if state != null else {}
-	game_over_overlay.show_with(int(snap.get("score", 0)), int(snap.get("wave", 1)))
+	game_over_overlay.show_with(int(snap.get("score", 0)), int(snap.get("wave", 1)), _best_score)
+
+
+func _persist_best_at_death() -> void:
+	if not _has_settings() or state == null:
+		return
+	var s: int = state.score
+	var prior: int = int(Settings.get_value(BEST_KEY, 0))
+	if s > prior:
+		Settings.set_value(BEST_KEY, s)
+		_best_score = s
 
 
 func _on_restart_pressed() -> void:

@@ -7,6 +7,7 @@ signal menu_requested()
 
 var _score_label: Label
 var _wave_label: Label
+var _best_label: Label
 var _menu_btn: Button
 
 
@@ -36,6 +37,10 @@ func _ready() -> void:
 	_wave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_wave_label.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(_wave_label)
+	_best_label = Label.new()
+	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_best_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(_best_label)
 	var hint := Label.new()
 	hint.text = "Press Confirm to retry / Cancel to exit"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -49,9 +54,10 @@ func _ready() -> void:
 	visible = false
 
 
-func show_with(score: int, wave: int) -> void:
+func show_with(score: int, wave: int, best: int = 0) -> void:
 	_score_label.text = "Final Score: %d" % score
 	_wave_label.text = "Wave reached: %d" % wave
+	_best_label.text = "Best: %d" % best
 	visible = true
 
 

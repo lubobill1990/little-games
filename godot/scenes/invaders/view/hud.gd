@@ -7,6 +7,7 @@ const Palette := preload("res://scripts/invaders/invaders_palette.gd")
 
 var _cfg: InvadersConfig
 var _score_label: Label
+var _best_label: Label
 var _wave_label: Label
 var _lives_box: HBoxContainer
 var _last_lives: int = -1
@@ -23,6 +24,12 @@ func _ready() -> void:
 	_score_label.add_theme_color_override("font_color", Palette.HUD_TEXT)
 	_score_label.position = Vector2(16, 12)
 	add_child(_score_label)
+	_best_label = Label.new()
+	_best_label.text = "Best: 0"
+	_best_label.add_theme_font_size_override("font_size", 14)
+	_best_label.add_theme_color_override("font_color", Palette.HUD_TEXT)
+	_best_label.position = Vector2(16, 38)
+	add_child(_best_label)
 	_wave_label = Label.new()
 	_wave_label.text = "Wave 1"
 	_wave_label.add_theme_font_size_override("font_size", 22)
@@ -43,8 +50,9 @@ func configure(cfg: InvadersConfig) -> void:
 	_cfg = cfg
 
 
-func update_from_snapshot(snap: Dictionary) -> void:
+func update_from_snapshot(snap: Dictionary, best_score: int = 0) -> void:
 	_score_label.text = "Score: %d" % int(snap.get("score", 0))
+	_best_label.text = "Best: %d" % best_score
 	_wave_label.text = "Wave %d" % int(snap.get("wave", 1))
 	var lives: int = int(snap.get("lives", 0))
 	if lives != _last_lives:

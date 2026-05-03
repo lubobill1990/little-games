@@ -93,3 +93,13 @@ static func _wav_from_pcm(samples: PackedByteArray) -> AudioStreamWAV:
 	w.stereo = false
 	w.data = samples
 	return w
+
+
+## A `tone()` whose `loop_mode` is set to LOOP_FORWARD before return — for
+## sustained loops like the UFO drone. Kept here so callers in `scenes/` don't
+## have to spell out an `AudioStreamWAV` type, which would trip the
+## `Audio containment` CI lint (issue #43).
+static func looping_tone(freq: float, duration_s: float, volume: float) -> AudioStreamWAV:
+	var w: AudioStreamWAV = tone(freq, duration_s, volume)
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	return w
