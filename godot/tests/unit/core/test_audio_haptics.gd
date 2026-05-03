@@ -40,8 +40,9 @@ func test_tier_for_huge_value_picks_cap() -> void:
 
 func test_tone_produces_correct_byte_length() -> void:
 	var w: AudioStreamWAV = SfxTones.tone(440.0, 0.05, 0.5)
-	# 22050 Hz × 0.05s × 2 bytes/sample = 2205 bytes.
-	assert_eq(w.data.size(), 2205)
+	# n samples = int(0.05 * 22050) = 1102; 16-bit mono = 2 bytes/sample.
+	var n: int = int(0.05 * SfxTones.SAMPLE_RATE)
+	assert_eq(w.data.size(), n * 2)
 	assert_eq(w.format, AudioStreamWAV.FORMAT_16_BITS)
 	assert_eq(w.mix_rate, SfxTones.SAMPLE_RATE)
 
@@ -51,8 +52,9 @@ func test_tone_sequence_concatenates_durations() -> void:
 		Vector2(440.0, 0.05),
 		Vector2(660.0, 0.10),
 	])
-	# (0.05 + 0.10) × 22050 × 2 = 6615 bytes.
-	assert_eq(w.data.size(), 6615)
+	# Sum of int(dur * rate) per step, doubled for 2 bytes/sample.
+	var total_n: int = int(0.05 * SfxTones.SAMPLE_RATE) + int(0.10 * SfxTones.SAMPLE_RATE)
+	assert_eq(w.data.size(), total_n * 2)
 
 
 func test_volume_clamps_and_combines() -> void:
