@@ -47,6 +47,8 @@ static func make_player(player_idx: int, spawn_col: int, spawn_row: int,
 		"kind": "player",
 		"owner": 1,
 		"player_idx": player_idx,
+		"spawn_col": spawn_col,
+		"spawn_row": spawn_row,
 		"x": center_x,
 		"y": center_y,
 		"facing": TileGrid.DIR_N,
@@ -58,7 +60,27 @@ static func make_player(player_idx: int, spawn_col: int, spawn_row: int,
 		"freeze_until_ms": 0,
 		"fire_cooldown_until_ms": 0,
 		"fire_latched": false,
+		"respawn_at_ms": 0,
 	}
+
+
+## Respawn a player tank in place — resets position to spawn tile, clears
+## intent, gives helmet for `helmet_ms`. Star level + has_ship reset to FC
+## defaults (player loses upgrades on death).
+static func respawn_player(tank: Dictionary, cfg: TankConfig, now_ms: int) -> void:
+	var hx: int = (cfg.tank_w_tiles * cfg.tile_size_sub) / 2
+	var hy: int = (cfg.tank_h_tiles * cfg.tile_size_sub) / 2
+	tank["x"] = int(tank["spawn_col"]) * cfg.tile_size_sub + hx
+	tank["y"] = int(tank["spawn_row"]) * cfg.tile_size_sub + hy
+	tank["facing"] = TileGrid.DIR_N
+	tank["moving"] = false
+	tank["alive"] = true
+	tank["star"] = 0
+	tank["has_ship"] = false
+	tank["helmet_until_ms"] = now_ms + cfg.player_helmet_on_respawn_ms
+	tank["fire_cooldown_until_ms"] = 0
+	tank["fire_latched"] = false
+	tank["respawn_at_ms"] = 0
 
 
 ## Build a fresh enemy tank dict at the spawn tile (top-left tile coord).

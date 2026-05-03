@@ -351,8 +351,17 @@ func test_from_snapshot_rejects_unknown_version() -> void:
 func test_is_game_over_when_all_lives_zero() -> void:
 	var s: TankGameState = _empty_grid_state(2)
 	assert_false(s.is_game_over())
+	# Lives==0 alone is not game-over while players are still alive on the
+	# field (acceptance #15b/c — game-over needs all players dead AND no
+	# respawn pending).
 	s.lives_arr[0] = 0
 	s.lives_arr[1] = 0
+	assert_false(s.is_game_over(), "alive players still on the field")
+	# Mark both dead and clear any respawn timer → now game-over.
+	s.players[0]["alive"] = false
+	s.players[0]["respawn_at_ms"] = 0
+	s.players[1]["alive"] = false
+	s.players[1]["respawn_at_ms"] = 0
 	assert_true(s.is_game_over())
 
 

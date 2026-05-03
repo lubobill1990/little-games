@@ -252,17 +252,37 @@ func set_last_tick(t_ms: int) -> void:
 # --- queries ---
 
 func is_game_over() -> bool:
-	# Reserved for win/lose commit; v1 partial impl just checks lives.
+	# Either the base has been destroyed (acceptance #15a), or every player
+	# is permanently out of lives (1P: P1 lives==0 with no respawn pending;
+	# 2P co-op: both players' lives==0).
+	if base_pos.size() == 2 and grid.get_tile(int(base_pos[0]), int(base_pos[1])) != TileGrid.TILE_BASE:
+		return true
 	for idx in range(_player_count):
+		# Alive on the field OR has lives left OR respawn timer pending.
+		if players[idx]["alive"]:
+			return false
 		if lives_arr[idx] > 0:
+			return false
+		if int(players[idx].get("respawn_at_ms", 0)) > now_ms:
 			return false
 	return true
 
 
 func is_level_clear() -> bool:
-	# Reserved for win/lose commit. Until enemies are spawned by the AI
-	# commit, "level clear" is meaningless — return false.
-	return false
+	# Acceptance #14: clearing all enemies with one enemy bullet still alive
+	# does NOT count as cleared until that bullet expires/hits. So:
+	#   - all roster entries spawned, AND
+	#   - no live enemy on the field, AND
+	#   - no enemy bullet in flight.
+	if int(wave_state.get("queue_index", 0)) < roster.size():
+		return false
+	for e in enemies:
+		if e["alive"]:
+			return false
+	for b in bullets:
+		if b["alive"] and b["owner_kind"] == "enemy":
+			return false
+	return true
 
 
 func score(player_idx: int) -> int:
@@ -388,6 +408,31 @@ static func from_snapshot(snap: Dictionary) -> Self:
 ## so resolution is deterministic across runs and snapshot-replays.
 func _step_one(t_ms: int) -> bool:
 	var changed: bool = false
+	# (0) respawn check. If a dead player's respawn_at_ms has elapsed, put
+	# them back at their spawn tile with a fresh helmet. Per acceptance #16,
+	# any enemy whose AABB overlaps the spawn tile at the moment of respawn
+	# is destroyed silently (no score awarded).
+	for pidx0 in range(_player_count):
+		var pt0: Dictionary = players[pidx0]
+		if pt0["alive"]:
+			continue
+		if lives_arr[pidx0] <= 0:
+			continue
+		if t_ms < int(pt0["respawn_at_ms"]):
+			continue
+		TankEntity.respawn_player(pt0, config, t_ms)
+		# Acceptance #16: kill any enemy parked on the spawn AABB.
+		var phx: int = (config.tank_w_tiles * config.tile_size_sub) / 2
+		var phy: int = (config.tank_h_tiles * config.tile_size_sub) / 2
+		for e0 in enemies:
+			if not e0["alive"]:
+				continue
+			if Aabb.overlaps(pt0["x"], pt0["y"], phx, phy,
+					e0["x"], e0["y"], phx, phy):
+				e0["alive"] = false
+				wave_state["killed_count"] = int(wave_state.get("killed_count", 0)) + 1
+				# No score award (acceptance #16).
+		changed = true
 	# (1) spawn.
 	var spawned: Variant = Spawn.try_spawn(_spawn_rng, config, t_ms,
 			wave_state, roster, enemy_spawn_slots, enemies, players)
@@ -515,14 +560,17 @@ func _step_one(t_ms: int) -> bool:
 				if Aabb.overlaps(b2["x"], b2["y"], Bullet.HALF_W, Bullet.HALF_H,
 						pt["x"], pt["y"], hx_t, hy_t):
 					# Helmet absorbs damage (acceptance #12c). Bullet is
-					# consumed either way. Lives / kill plumbing lands in
-					# the win/lose commit; for now we just remove the bullet
-					# and (if no helmet) leave a TODO marker for the next
-					# commit to wire respawn.
+					# consumed either way.
 					b2["alive"] = false
 					if t_ms >= int(pt["helmet_until_ms"]):
-						# Damage path — actual lives decrement in commit 6.
-						pass
+						# Damage path: kill the player and schedule a respawn
+						# if lives remain. Acceptance #15b/c: game over only
+						# when ALL players have lives==0 (and respawn timer
+						# isn't pending) — see is_game_over().
+						pt["alive"] = false
+						lives_arr[pidx] = maxi(0, lives_arr[pidx] - 1)
+						if lives_arr[pidx] > 0:
+							pt["respawn_at_ms"] = t_ms + config.player_respawn_ms
 					changed = true
 					break
 		else:  # player bullet
