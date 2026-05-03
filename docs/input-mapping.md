@@ -12,6 +12,7 @@ The `InputManager` autoload (added in task #2) exposes **semantic actions** so g
 | `move_down`  | ↓ / S          | D-pad ↓                | D-pad ↓            | Swipe ↓ |
 | `soft_drop`  | ↓ / S          | D-pad ↓                | D-pad ↓            | Hold-down zone |
 | `hard_drop`  | Space          | A                      | Cross              | Tap-up zone    |
+| `fire`       | Space / J      | A                      | Cross              | On-screen FIRE button |
 | `rotate_cw`  | ↑ / X          | B                      | Circle             | Right-half tap |
 | `rotate_ccw` | Z              | X                      | Square             | Left-half tap  |
 | `hold`       | C / Shift      | Y / LB                 | Triangle / L1      | Two-finger tap |
@@ -21,6 +22,14 @@ The `InputManager` autoload (added in task #2) exposes **semantic actions** so g
 `move_up` and `move_down` are semantic 4-direction equivalents of `move_left`/`move_right` for grid-based games (Snake, 2048). They intentionally share keys with `rotate_cw` (↑) and `soft_drop` (↓); per-game scenes consume only the actions they care about, so the overlap is harmless.
 
 `undo` shares its keyboard default (Z) with `rotate_ccw` and its gamepad default (Y / Triangle) with `hold`. Same rationale: 2048 listens for `undo`, Tetris listens for `rotate_ccw` / `hold` — actions don't compete unless a single scene subscribes to both, which none do.
+
+### Cross-action duplicate bindings are allowed
+
+Multiple semantic actions may share the same physical input by design. Example: `fire` (Invaders) and `hard_drop` (Tetris) both default to `Space` / `A`. Only the scene that's loaded subscribes to its action's signal, so there's no conflict at runtime. The rebind UI (task #5b) **must permit cross-action duplicates** when the user assigns the same key to two actions; it's a feature, not a misconfiguration.
+
+### Touch UX may differ per game by design
+
+Action names are stable across games, but the touch surface that produces them is not. `hard_drop` in Tetris is a tap-up zone over the playfield; `fire` in Invaders is a dedicated on-screen FIRE button in the bottom-right corner. Each scene picks the gesture that fits its play model — there's no requirement to converge.
 
 ## DAS / ARR (auto repeat)
 

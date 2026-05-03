@@ -1,0 +1,60 @@
+[gd_scene load_steps=14 format=3 uid="uid://binvadersroot01"]
+
+[ext_resource type="Script" path="res://scenes/invaders/invaders.gd" id="1_root"]
+[ext_resource type="Script" path="res://scenes/invaders/view/formation_layer.gd" id="2_formation"]
+[ext_resource type="Script" path="res://scenes/invaders/view/bunkers_layer.gd" id="3_bunkers"]
+[ext_resource type="Script" path="res://scenes/invaders/view/player_layer.gd" id="4_player"]
+[ext_resource type="Script" path="res://scenes/invaders/view/bullets_layer.gd" id="5_bullets"]
+[ext_resource type="Script" path="res://scenes/invaders/view/ufo_layer.gd" id="6_ufo"]
+[ext_resource type="Script" path="res://scenes/invaders/view/explosion_layer.gd" id="7_explosion"]
+[ext_resource type="Script" path="res://scenes/invaders/view/hud.gd" id="8_hud"]
+[ext_resource type="Script" path="res://scenes/invaders/view/pause_overlay.gd" id="9_pause"]
+[ext_resource type="Script" path="res://scenes/invaders/view/wave_interlude.gd" id="10_interlude"]
+[ext_resource type="Script" path="res://scenes/invaders/view/game_over_overlay.gd" id="11_over"]
+[ext_resource type="Script" path="res://scenes/invaders/view/fire_button.gd" id="12_fire"]
+
+[node name="Invaders" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_root")
+
+[node name="BoardHost" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="FormationLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("2_formation")
+
+[node name="BunkersLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("3_bunkers")
+
+[node name="PlayerLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("4_player")
+
+[node name="BulletsLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("5_bullets")
+
+[node name="UfoLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("6_ufo")
+
+[node name="ExplosionLayer" type="Node2D" parent="BoardHost"]
+script = ExtResource("7_explosion")
+
+[node name="HUD" type="Control" parent="."]
+anchors_preset = 10
+anchor_right = 1.0
+script = ExtResource("8_hud")
+
+[node name="FireButton" type="Control" parent="."]
+script = ExtResource("12_fire")
+
+[node name="PauseOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("9_pause")
+
+[node name="WaveInterlude" type="CanvasLayer" parent="."]
+script = ExtResource("10_interlude")
+
+[node name="GameOverOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("11_over")
