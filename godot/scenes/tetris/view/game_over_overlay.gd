@@ -1,10 +1,13 @@
 extends CanvasLayer
-## Game-over overlay. Layer 10. Listens for ui_accept to restart.
+## Game-over overlay. Layer 10. ui_accept restarts; an explicit Menu button
+## (or Back action) returns to the host menu.
 
 signal restart_requested()
+signal menu_requested()
 
 var _score_label: Label
 var _lines_label: Label
+var _menu_btn: Button
 
 func _ready() -> void:
 	layer = 10
@@ -37,6 +40,10 @@ func _ready() -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(hint)
+	_menu_btn = Button.new()
+	_menu_btn.text = "Back to menu"
+	_menu_btn.pressed.connect(func() -> void: menu_requested.emit())
+	vbox.add_child(_menu_btn)
 	InputManager.action_pressed.connect(_on_action_pressed)
 	visible = false
 
@@ -50,3 +57,5 @@ func _on_action_pressed(action: StringName) -> void:
 		return
 	if action == &"ui_accept":
 		emit_signal("restart_requested")
+	elif action == &"ui_cancel":
+		emit_signal("menu_requested")

@@ -2,10 +2,6 @@
 
 A walkthrough that should let you ship a new classic in a single PR.
 
-> The framework that makes this slick lands in task #6. Until then, follow the
-> structure below by hand and the menu integration will be a one-liner once #6
-> ships.
-
 ## 1. Open a tracking issue
 
 Use the `Task` template. Fill in PRD, deliverables, acceptance, tests. Move the
@@ -22,39 +18,60 @@ godot/
 │   │   └── ...
 │   └── controller.gd          # Glues core to the scene
 ├── scenes/<game>/
-│   ├── <game>.tscn            # Root scene, implements the Game contract
+│   ├── <game>.tscn            # Root scene, implements the GameHost contract
 │   └── <game>.gd
 └── tests/unit/<game>/
     └── test_*.gd
 ```
 
-## 3. Implement the `Game` scene contract
+## 3. Implement the GameHost contract
 
-(API stabilises in task #6.)
+The menu launches a game by instancing its root scene and calling lifecycle
+methods on the root node. The contract is **duck-typed** — any node that
+implements these methods and emits `exit_requested` qualifies, regardless of
+whether it extends `Control`, `Node2D`, or `Node`.
 
 ```gdscript
-extends Control
-class_name Game
+extends Control  # or Node2D / Node — whatever the game needs
 
-signal score_reported(value: int)
-signal exited
+signal exit_requested()              # game wants to return to menu
+signal score_reported(value: int)    # optional but recommended; menu may show
 
-func start(seed: int = 0) -> void: ...
-func pause() -> void: ...
-func resume() -> void: ...
-func teardown() -> void: ...
+func start(seed: int = 0) -> void:   # called by host after instancing
+	pass
+func pause() -> void:                # host requests pause (e.g. menu opened)
+	pass
+func resume() -> void:               # host releases pause
+	pass
+func teardown() -> void:             # host is about to free us; drop refs
+	pass
 ```
 
-## 4. Register in the menu
+The game emits `exit_requested` from its pause overlay's "Back to menu" button
+and from the Game-Over overlay's "Menu" button. The host listens, calls
+`teardown()`, frees the instance, and refocuses the menu.
 
-Add the game to `globals/game_registry.gd` (task #6):
+When the scene is loaded **directly** (e.g. as the project's `main_scene` for
+local testing), it should auto-call `start(_fresh_seed())` from `_ready` if
+`get_tree().current_scene == self`. This keeps direct-launch and integration
+tests working without a host wrapper.
+
+## 4. Register in `GameRegistry`
+
+`godot/scripts/core/game/game_registry.gd`:
 
 ```gdscript
-const GAMES := [
-	{ "id": "tetris", "title": "Tetris", "scene": "res://scenes/tetris/tetris.tscn" },
-	{ "id": "snake",  "title": "Snake",  "scene": "res://scenes/snake/snake.tscn"  },  # ← new
+const _GAMES: Array = [
+	[&"tetris",     "Tetris",      "res://scenes/tetris/tetris.tscn",            ""],
+	[&"snake_stub", "Snake (WIP)", "res://scenes/games/snake_stub/snake_stub.tscn", ""],
+	[&"<your_id>",  "<Your Title>", "res://scenes/games/<your_dir>/<your_root>.tscn", "<icon_path or empty>"],
 ]
 ```
+
+Scene paths are strings; the menu loads them lazily via `load()` on selection,
+so unused games pay zero memory cost. `GameRegistry.validate()` runs at menu
+boot — duplicate ids and missing scene paths surface in the menu's "Registry
+problems" label and the offending entries are skipped.
 
 ## 5. Tests
 

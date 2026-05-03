@@ -22,12 +22,12 @@ func before_each() -> void:
 	await get_tree().process_frame
 	var packed: PackedScene = load("res://scenes/tetris/tetris.tscn")
 	scene = packed.instantiate()
-	# Replace the auto-spawned state with a deterministic-seeded one BEFORE
-	# adding to tree so _ready uses ours. We can't intercept _ready cleanly,
-	# so instead let _ready run with its own state, then swap.
 	add_child(scene)
 	await get_tree().process_frame
-	# Disconnect old signals, replace state with deterministic seed, rewire view.
+	# In production, the scene auto-starts when it's the project's main_scene;
+	# under GUT we instantiate it as a child, so call start() explicitly with a
+	# throwaway seed, then immediately swap to a deterministic-seeded state.
+	scene.start(1)
 	scene.state.piece_locked.disconnect(scene._on_piece_locked)
 	scene.state.game_over.disconnect(scene._on_game_over)
 	scene.state = TetrisGameState.create(SEED)

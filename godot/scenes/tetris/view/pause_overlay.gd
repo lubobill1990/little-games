@@ -1,5 +1,12 @@
 extends CanvasLayer
 ## Pause overlay. Layer 10 = above HUD/touch controls. Visible when paused.
+## Owns a "Back to menu" button that fires `menu_requested` so the game host
+## can reclaim control. Also listens for `ui_cancel` while visible so keyboard
+## and gamepad users can return to the menu without navigating to the button.
+
+signal menu_requested()
+
+var _menu_btn: Button
 
 func _ready() -> void:
 	layer = 10
@@ -8,11 +15,35 @@ func _ready() -> void:
 	bg.anchor_right = 1.0
 	bg.anchor_bottom = 1.0
 	add_child(bg)
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.anchor_right = 1.0
+	vbox.anchor_bottom = 1.0
+	vbox.add_theme_constant_override("separation", 16)
+	add_child(vbox)
 	var label := Label.new()
-	label.text = "PAUSED\n\nPress Pause to resume"
+	label.text = "PAUSED"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 36)
-	label.anchor_right = 1.0
-	label.anchor_bottom = 1.0
-	add_child(label)
+	vbox.add_child(label)
+	var hint := Label.new()
+	hint.text = "Press Pause to resume"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(hint)
+	_menu_btn = Button.new()
+	_menu_btn.text = "Back to menu"
+	_menu_btn.pressed.connect(func() -> void: menu_requested.emit())
+	vbox.add_child(_menu_btn)
+	visibility_changed.connect(_on_visibility_changed)
+	InputManager.action_pressed.connect(_on_action_pressed)
+
+func _on_visibility_changed() -> void:
+	if visible and is_instance_valid(_menu_btn):
+		_menu_btn.grab_focus()
+
+func _on_action_pressed(action: StringName) -> void:
+	if not visible:
+		return
+	if action == &"ui_cancel":
+		menu_requested.emit()
