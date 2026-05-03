@@ -179,6 +179,14 @@ jobs:
       - name: Add .nojekyll
         run: touch build/web/.nojekyll
 
+      - name: Inject build marker
+        run: |
+          # Pages CDN can serve stale HTML; embed the commit SHA so the
+          # post-deploy check can prove it sees the bundle that was just built.
+          # See docs/learning/2026-05-03-pages-bootstrap.md.
+          sed -i "s|</head>|<meta name=\"build-sha\" content=\"${{ github.sha }}\"></head>|" build/web/index.html
+          grep -q "build-sha" build/web/index.html
+
       - name: Smoke-check exported files
         run: |
           test -s build/web/index.html
@@ -189,7 +197,15 @@ jobs:
           grep -q 'Engine' build/web/index.html
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        # Pinned to commit SHA (was @v5) per #39 — floating tags can be
+        # re-pointed; the failure class we hit was "trusted setup-time state",
+        # and SHA pinning closes a similar door. enablement:true bootstraps
+        # Pages on a fresh fork; in this repo Pages is already enabled, so it
+        # is a no-op here but matters for forks. See docs/learning/2026-05-03-
+        # pages-bootstrap.md for the full rationale (incl. PAT requirement).
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
+        with:
+          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -198,4 +214,34 @@ jobs:
 
       - name: Deploy to Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        # Pinned to commit SHA (was @v4) per #39.
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+
+      - name: Post-deploy verification (assets + freshness)
+        run: |
+          # Verify the deploy actually served what we built. Three checks:
+          # (a) HEAD on the asset triplet returns 200,
+          # (b) GET on index.html contains the build-sha marker we injected,
+          # (c) the marker matches THIS run's commit (not stale CDN cache).
+          # 12×10s = 2 min retry budget — Pages CDN propagation has been
+          # observed to exceed 30s in practice. See #39 acceptance #2.
+          url="${{ steps.deployment.outputs.page_url }}"
+          expected="${{ github.sha }}"
+          for i in $(seq 1 12); do
+            ok=1
+            for asset in index.html index.wasm index.pck; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 -I "${url}${asset}" || echo 000)
+              [ "$code" = "200" ] || { echo "attempt $i: $asset → $code"; ok=0; break; }
+            done
+            if [ $ok -eq 1 ]; then
+              sha=$(curl -fsSL --max-time 10 "${url}index.html" | grep -oE 'build-sha" content="[a-f0-9]+"' | cut -d'"' -f3 || echo "")
+              if [ "$sha" = "$expected" ]; then
+                echo "live and fresh: $url (sha $sha)"
+                exit 0
+              fi
+              echo "attempt $i: served sha '$sha', expected '$expected'"
+            fi
+            sleep 10
+          done
+          echo "::error::post-deploy verification failed after 12×10s"
+          exit 1
