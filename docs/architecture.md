@@ -39,6 +39,16 @@ Godot wins on the pareto frontier for "small classic games on every platform wit
 
 The hard rule: **per-game `core/` must not import `Node` or anything Godot-specific** (only `Resource`, primitives, math). This keeps the game rules independently testable and portable should we ever swap the rendering layer.
 
+## Snapshot diffs, not signals
+
+Per-game `core/` exposes mutations via `snapshot()` returning a `Dictionary` with at least a `version: int` field plus game-specific state. Scenes detect what changed by **diffing successive snapshots between ticks** — never by subscribing to signals. Reasons:
+
+- Cores stay `Node`-free (the testability contract above).
+- Replay/integration tests can drive a core deterministically and assert on snapshots without a render layer attached.
+- One uniform mechanism replaces ad-hoc per-event callbacks.
+
+See `docs/persistence.md` for the canonical key namespace and schema-mismatch policy that builds on this contract.
+
 ## Directory map
 
 See `CLAUDE.md` §3.
