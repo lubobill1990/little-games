@@ -86,16 +86,16 @@ func test_fire_then_hit_increments_score() -> void:
 
 func test_enemy_bullet_cap_initial_wave() -> void:
 	var s = State.create(0, _cfg(), _lvl())
-	# Cap at wave 1 = enemy_bullets_max_init.
-	assert_eq(s._max_enemy_bullets(), s.config.enemy_bullets_max_init)
+	# Cap at wave 1 = enemy_bullets_max_init + 1 (dive PR #30 buff).
+	assert_eq(s._max_enemy_bullets(), s.config.enemy_bullets_max_init + 1)
 
 
 func test_enemy_bullet_cap_grows_with_wave() -> void:
 	var s = State.create(0, _cfg(), _lvl())
 	s.wave = 3
-	# +1 per wave step (default wave_step=1, per_wave=1) → init + 2.
+	# +1 per wave step (default wave_step=1, per_wave=1) → init + 2 + 1 (dive buff).
 	assert_eq(s._max_enemy_bullets(),
-			s.config.enemy_bullets_max_init + 2 * s.config.enemy_bullets_per_wave)
+			s.config.enemy_bullets_max_init + 2 * s.config.enemy_bullets_per_wave + 1)
 
 
 func test_spawn_enemy_bullet_uses_bottom_of_column() -> void:

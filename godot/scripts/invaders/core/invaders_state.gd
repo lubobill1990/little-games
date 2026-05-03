@@ -20,6 +20,7 @@ const Formation := preload("res://scripts/invaders/core/formation.gd")
 const BunkerGrid := preload("res://scripts/invaders/core/bunker_grid.gd")
 const BunkerErosion := preload("res://scripts/invaders/core/bunker_erosion.gd")
 const Ufo := preload("res://scripts/invaders/core/ufo.gd")
+const Dive := preload("res://scripts/invaders/core/dive.gd")
 
 const SCHEMA_VERSION: int = 1
 
@@ -77,6 +78,7 @@ var last_ufo_spawn_ms: int = 0
 
 # --- Reserved for invaders-dive ---
 var divers: Array = []   # Always [] in v1; dive PR populates without bumping version.
+var last_dive_check_ms: int = 0   # Reserved in v1; populated by dive PR (#30).
 
 # --- Time ---
 var last_tick_ms: int = 0
@@ -260,7 +262,9 @@ func _sub_step(dt_ms: int, _at_ms: int) -> bool:
 			changed = true
 		else:
 			# Check vs enemies.
-			if _player_bullet_vs_enemies():
+			if _player_bullet_vs_divers():
+				changed = true
+			elif _player_bullet_vs_enemies():
 				changed = true
 			elif _player_bullet_vs_ufo():
 				changed = true
@@ -312,6 +316,14 @@ func _sub_step(dt_ms: int, _at_ms: int) -> bool:
 
 	# 6. UFO lifecycle.
 	if _step_ufo(dt_s, dt_ms):
+		changed = true
+
+	# 6b. Dive: advance any active divers (possibly emit bullets, complete or
+	# kamikaze-hit), then maybe trigger a fresh dive. Order matters — advance
+	# first so a kamikaze hit on this tick is processed before _maybe_start.
+	if _step_divers(dt_s, dt_ms):
+		changed = true
+	if _maybe_start_dive(last_tick_ms):
 		changed = true
 
 	# 7. Invulnerability tick.
@@ -443,8 +455,12 @@ func _player_hit() -> void:
 
 func _max_enemy_bullets() -> int:
 	# +1 every `wave_step` waves above wave 1.
+	# Plus a static +1 added by the dive PR (#30) to compensate for divers
+	# (which fire at fixed checkpoints) competing with formation enemies for
+	# bullet slots. The +1 holds even at wave 1 where no divers ever spawn —
+	# this is a deliberate, mild buff to the formation; tests adjusted.
 	var bonus: int = ((wave - 1) / config.enemy_bullets_wave_step) * config.enemy_bullets_per_wave
-	return config.enemy_bullets_max_init + bonus
+	return config.enemy_bullets_max_init + bonus + 1
 
 
 func _spawn_enemy_bullet() -> bool:
@@ -524,6 +540,9 @@ func _advance_wave() -> void:
 	formation_step_ms_accum = 0
 	# Active UFO is force-removed at wave change (acceptance #10).
 	ufo_alive = false
+	# Active divers are also dropped — no carryover across waves (#30 acc #9).
+	divers.clear()
+	last_dive_check_ms = 0
 	# Bullets are kept; gameplay-wise it's fine and avoids surprising the player.
 
 
@@ -576,7 +595,8 @@ func snapshot() -> Dictionary:
 		"bunkers": bgs,
 		"ufo": ufo_obj,
 		"last_ufo_spawn_ms": last_ufo_spawn_ms,
-		"divers": [],
+		"divers": _snapshot_divers(),
+		"last_dive_check_ms": last_dive_check_ms,
 		"rng_master": _master_seed,
 		"rng_bullet": int(_bullet_rng.state),
 		"rng_ufo": int(_ufo_rng.state),
@@ -636,6 +656,13 @@ static func from_snapshot(snap: Dictionary, cfg: InvadersConfig, lvl: InvadersLe
 		s.ufo_spawn_ms = int(u["spawn_ms"])
 	s.last_ufo_spawn_ms = int(snap["last_ufo_spawn_ms"])
 	s.divers = []  # reserved; v1 always []
+	# Restore divers if present (dive PR snapshot includes them).
+	for d in snap.get("divers", []):
+		var dc: Dictionary = {}
+		for k in d.keys():
+			dc[k] = d[k]
+		s.divers.append(dc)
+	s.last_dive_check_ms = int(snap.get("last_dive_check_ms", 0))
 	# RNG states. We use master_seed in create() to set initial states; now
 	# overwrite with the saved states so randomness picks up from the exact
 	# point of the snapshot.
@@ -643,3 +670,161 @@ static func from_snapshot(snap: Dictionary, cfg: InvadersConfig, lvl: InvadersLe
 	s._ufo_rng.state = int(snap.get("rng_ufo", s._ufo_rng.state))
 	s._dive_rng.state = int(snap.get("rng_dive", s._dive_rng.state))
 	return s
+
+
+# ---------------- Internal: divers (#30) ----------------
+
+## Per-tick: advance every active diver, fire pending checkpoints, check
+## kamikaze-vs-player, complete (returning → restore to live_mask, others
+## → drop). Returns true if anything changed.
+func _step_divers(dt_s: float, _dt_ms: int) -> bool:
+	if divers.is_empty():
+		return false
+	var changed: bool = false
+	var i: int = 0
+	while i < divers.size():
+		var d: Dictionary = divers[i]
+		# Advance t.
+		d["t"] = float(d["t"]) + float(d["speed"]) * dt_s
+		var pos: Vector2 = _diver_world_pos(d)
+		var mode: int = int(d["mode"])
+
+		# Fire any pending checkpoint at or before the current t.
+		var fired: bool = false
+		var fcs: PackedFloat32Array = d["fire_checkpoints"]
+		var t_now: float = float(d["t"])
+		var keep: PackedFloat32Array = PackedFloat32Array()
+		for cp in fcs:
+			if not fired and cp <= t_now and enemy_bullets.size() < _max_enemy_bullets():
+				var v: Vector2 = Dive.tracker_velocity(pos, player_x,
+						config.player_y, config.enemy_bullet_speed)
+				enemy_bullets.append({"x": pos.x, "y": pos.y, "vx": v.x, "vy": v.y})
+				fired = true
+			else:
+				keep.append(cp)
+		if fired:
+			d["fire_checkpoints"] = keep
+			changed = true
+
+		# Kamikaze: AABB vs player.
+		if mode == Dive.MODE_KAMIKAZE and player_alive and invuln_until_ms <= 0:
+			if Aabb.overlaps(pos.x, pos.y, config.enemy_hx, config.enemy_hy,
+					player_x, config.player_y,
+					config.player_w * 0.5, config.player_h * 0.5):
+				_player_hit()
+				divers.remove_at(i)
+				changed = true
+				continue
+
+		# Completion: t >= 1.0.
+		if t_now >= 1.0:
+			if mode == Dive.MODE_RETURNING:
+				# Snap back into formation. Slot is the original (row,col) and
+				# its current world position is `p2` (sampled at dive start;
+				# formation may have shifted, so re-clamp into live_mask only).
+				var idx: int = int(d["row"]) * config.cols + int(d["col"])
+				if idx >= 0 and idx < live_mask.size():
+					live_mask[idx] = 1
+			# Remove diver regardless.
+			divers.remove_at(i)
+			changed = true
+			continue
+
+		divers[i] = d
+		i += 1
+		changed = true
+	return changed
+
+
+## Front-row dive trigger. Gates on Dive.should_dive(). On a successful
+## attempt, picks a live front-row enemy uniformly (via _dive_rng), removes
+## it from the formation (live_mask=0), and appends a fresh diver dict.
+## Returns true if a new diver was added.
+##
+## Front rows = bottom two rows of the formation grid (rows-1, rows-2).
+func _maybe_start_dive(now_ms: int) -> bool:
+	if not Dive.should_dive(_dive_rng, wave, now_ms, last_dive_check_ms,
+			config.dive_check_ms, divers.size()):
+		# Only refresh the cooldown anchor when the cooldown was the gate
+		# blocker; otherwise the next tick will keep retrying p(wave).
+		# Simplest correct rule: anchor on the first failed RNG-roll past
+		# cooldown — but the test of dive_check_ms is "now - last >= dive_check".
+		# We update last_dive_check_ms only when we actually consider, i.e.
+		# when cooldown elapsed. should_dive returned false; check why:
+		if (now_ms - last_dive_check_ms) >= config.dive_check_ms and wave >= 2:
+			last_dive_check_ms = now_ms
+		return false
+	# Pick a live front-row enemy.
+	var front_rows: Array = [config.rows - 1, config.rows - 2]
+	var candidates: Array = []
+	for r in front_rows:
+		if r < 0:
+			continue
+		for c in range(config.cols):
+			if live_mask[r * config.cols + c] == 1:
+				# Exclude any cell whose row/col matches an active diver
+				# (defensive — should already be 0 when diving, but checked).
+				var occupied: bool = false
+				for d in divers:
+					if int(d["row"]) == r and int(d["col"]) == c:
+						occupied = true
+						break
+				if not occupied:
+					candidates.append([r, c])
+	if candidates.is_empty():
+		last_dive_check_ms = now_ms
+		return false
+	var pick: Array = candidates[_dive_rng.randi() % candidates.size()]
+	var r: int = pick[0]
+	var c: int = pick[1]
+	live_mask[r * config.cols + c] = 0
+	# Build path.
+	var ecx: float = formation_ox + c * config.cell_w + config.cell_w * 0.5
+	var ecy: float = formation_oy + r * config.cell_h + config.cell_h * 0.5
+	var current: Vector2 = Vector2(ecx, ecy)
+	# Slot world position (where Returning dive will land back).
+	var slot: Vector2 = Vector2(ecx, ecy)
+	var mode: int = Dive.pick_mode(_dive_rng)
+	var path: Dictionary = Dive.sample_dive_path(_dive_rng, mode, current,
+			slot, player_x, config.world_w, config.world_h)
+	var diver: Dictionary = Dive.make_diver(r, c, path, mode, config.diver_speed)
+	divers.append(diver)
+	last_dive_check_ms = now_ms
+	return true
+
+
+## AABB collide the player bullet with each diver. First hit wins; bullet is
+## consumed; diver is removed; score awarded at diver_score_multiplier × the
+## row's per-cell value (acceptance #5).
+func _player_bullet_vs_divers() -> bool:
+	if divers.is_empty() or not player_bullet_alive:
+		return false
+	for i in range(divers.size()):
+		var d: Dictionary = divers[i]
+		var pos: Vector2 = _diver_world_pos(d)
+		if Aabb.overlaps(player_bullet_x, player_bullet_y,
+				config.player_bullet_w * 0.5, config.player_bullet_h * 0.5,
+				pos.x, pos.y, config.enemy_hx, config.enemy_hy):
+			var kind_idx: int = enemy_kinds[int(d["row"]) * config.cols + int(d["col"])]
+			var val: int = level.row_values[kind_idx] if kind_idx < level.row_values.size() else 10
+			score += val * config.diver_score_multiplier
+			divers.remove_at(i)
+			player_bullet_alive = false
+			return true
+	return false
+
+
+## Bezier eval at the diver's current t.
+func _diver_world_pos(d: Dictionary) -> Vector2:
+	return Dive.bezier_eval(d["p0"], d["p1"], d["p2"], float(d["t"]))
+
+
+## Snapshot helper — deep-copy each diver dict so callers can't mutate.
+func _snapshot_divers() -> Array:
+	var out: Array = []
+	for d in divers:
+		var copy: Dictionary = {}
+		for k in d.keys():
+			copy[k] = d[k]
+		out.append(copy)
+	return out
