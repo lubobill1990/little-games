@@ -26,7 +26,7 @@ enum Phase { PLAYING, PAUSED, ANIMATING_FLASH, ANIMATING_SETTLE, GAME_OVER }
 signal exit_requested()
 signal score_reported(value: int)
 
-@onready var playfield: Node2D = $HBox/Playfield
+@onready var playfield: Node2D = $HBox/PlayfieldHost/Playfield
 @onready var hud: VBoxContainer = $HBox/Side/HUD
 @onready var next_queue: VBoxContainer = $HBox/Side/NextQueue
 @onready var hold_slot: Control = $HBox/Side/HoldSlot
