@@ -232,7 +232,10 @@ func test_tick_moves_player_in_facing_direction() -> void:
 func test_tick_no_change_when_intent_zero() -> void:
 	var s: TankGameState = _empty_grid_state(1)
 	s.set_last_tick(0)
-	# No intent set → moving == false → no movement.
+	# No intent set → no player movement. But spawn still fires on first
+	# sub-step because the wave queue hasn't been opened yet — drain the
+	# roster so the spawn phase is a no-op too.
+	s.wave_state["queue_index"] = s.roster.size()
 	var changed: bool = s.tick(80)
 	assert_false(changed)
 

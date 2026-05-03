@@ -61,6 +61,37 @@ static func make_player(player_idx: int, spawn_col: int, spawn_row: int,
 	}
 
 
+## Build a fresh enemy tank dict at the spawn tile (top-left tile coord).
+## `kind` ∈ {"basic","fast","power","armor"}; `bonus` flags this enemy as a
+## power-up dropper (set by the spawn queue from the roster). Enemies face
+## south on spawn (toward the player base) and are flagged moving so the
+## first AI tick can choose. HP comes from cfg.hp_for_kind.
+static func make_enemy(kind: String, spawn_col: int, spawn_row: int,
+		bonus: bool, cfg: TankConfig) -> Dictionary:
+	var hx: int = (cfg.tank_w_tiles * cfg.tile_size_sub) / 2
+	var hy: int = (cfg.tank_h_tiles * cfg.tile_size_sub) / 2
+	var center_x: int = spawn_col * cfg.tile_size_sub + hx
+	var center_y: int = spawn_row * cfg.tile_size_sub + hy
+	return {
+		"alive": true,
+		"kind": kind,
+		"owner": 0,
+		"x": center_x,
+		"y": center_y,
+		"facing": TileGrid.DIR_S,
+		"moving": true,
+		"hp": cfg.hp_for_kind(kind),
+		"star": 0,
+		"has_ship": false,
+		"helmet_until_ms": 0,
+		"freeze_until_ms": 0,
+		"fire_cooldown_until_ms": 0,
+		"fire_latched": false,
+		"bonus": bonus,
+		"last_decision_ms": 0,
+	}
+
+
 ## Half-extents helper (player + enemy tanks share size in v1).
 static func half_extents(cfg: TankConfig) -> Array:
 	return [
