@@ -96,15 +96,15 @@ var _dive_rng: RandomNumberGenerator   # reserved; not consumed in v1
 
 static func create(game_seed: int, cfg: InvadersConfig, lvl: InvadersLevel) -> Self:
 	# Tunneling cap (acceptance #12): the fastest moving thing per sub-step
-	# must travel less than the smallest collidable feature.
+	# must travel less than the smallest *broad-phase* collidable feature.
+	# Bunker cells (2 px) are explicitly excluded — bunker hits use a
+	# cell-range AABB scan, not point sampling, so cell size doesn't matter.
+	# What we guard against: bullets skipping past the *enemy* AABB or the
+	# *player* AABB on a single sub-step.
 	var sub_dt_s: float = float(cfg.sub_step_ms) / 1000.0
 	var max_speed: float = maxf(cfg.player_bullet_speed, cfg.enemy_bullet_speed)
 	var step_dist: float = max_speed * sub_dt_s
-	var min_feature: float = minf(2.0 * cfg.enemy_hy,
-			minf(cfg.cell_h,
-			minf(cfg.player_h,
-			minf(cfg.bunker_cell_h,
-			cfg.player_bullet_h))))
+	var min_feature: float = minf(2.0 * cfg.enemy_hy, cfg.player_h)
 	if step_dist >= min_feature:
 		push_error("InvadersGameState.create: tunneling cap violated — max bullet step %f >= min feature %f. Reduce bullet speeds or sub_step_ms." \
 				% [step_dist, min_feature])

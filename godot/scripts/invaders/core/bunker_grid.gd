@@ -79,6 +79,10 @@ func aabb_hit(origin_x: float, origin_y: float, cell_w: float, cell_h: float,
 	var max_cx: int = int(floor((bx + bhx - origin_x - 0.0001) / cell_w))
 	var min_cy: int = int(floor((by - bhy - origin_y) / cell_h))
 	var max_cy: int = int(floor((by + bhy - origin_y - 0.0001) / cell_h))
+	# Reject if the AABB lies entirely outside the grid before clamping —
+	# clamping would otherwise mash an out-of-range range onto an edge cell.
+	if max_cx < 0 or min_cx >= w or max_cy < 0 or min_cy >= h:
+		return false
 	min_cx = clampi(min_cx, 0, w - 1)
 	max_cx = clampi(max_cx, 0, w - 1)
 	min_cy = clampi(min_cy, 0, h - 1)
