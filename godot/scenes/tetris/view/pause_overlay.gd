@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## Pause overlay. Layer 10 = above HUD/touch controls. Visible when paused.
 ## Owns a "Back to menu" button that fires `menu_requested` so the game host
-## can reclaim control.
+## can reclaim control. Also listens for `ui_cancel` while visible so keyboard
+## and gamepad users can return to the menu without navigating to the button.
 
 signal menu_requested()
 
@@ -34,3 +35,15 @@ func _ready() -> void:
 	_menu_btn.text = "Back to menu"
 	_menu_btn.pressed.connect(func() -> void: menu_requested.emit())
 	vbox.add_child(_menu_btn)
+	visibility_changed.connect(_on_visibility_changed)
+	InputManager.action_pressed.connect(_on_action_pressed)
+
+func _on_visibility_changed() -> void:
+	if visible and is_instance_valid(_menu_btn):
+		_menu_btn.grab_focus()
+
+func _on_action_pressed(action: StringName) -> void:
+	if not visible:
+		return
+	if action == &"ui_cancel":
+		menu_requested.emit()
