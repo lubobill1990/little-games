@@ -24,6 +24,9 @@ Thumbs.db
 # these are per-machine and must never land in the repo).
 .lock
 .claude/gh-pr-review-state.json
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+**/__pycache__/
 .gh-pr-review-state.json
 .pr-review-worktrees/
 .implement-task-state.json
