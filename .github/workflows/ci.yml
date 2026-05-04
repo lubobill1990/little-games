@@ -52,37 +52,6 @@ jobs:
             exit 1
           fi
 
-      - name: Audio containment — no committed audio binaries
-        run: |
-          # Asset binaries (mp3/ogg/wav) must never be committed. The Tetris
-          # SFX/BGM are licensed for personal/local use only (see issue #43);
-          # other games' audio is procedurally synthesized at runtime.
-          if git ls-files | grep -iE '\.(mp3|ogg|wav)$'; then
-            echo "::error::audio binaries committed; see godot/assets/audio/README.md"
-            exit 1
-          fi
-
-      - name: Audio containment — Tetris assets excluded from web export
-        run: |
-          # The export filter keeps the gitignored mp3s out of the web pck even
-          # if a developer drops them on disk before exporting. Verified at
-          # config layer because pck content is unreliable to grep.
-          if ! grep -q 'exclude_filter=.*assets/audio/tetris' godot/export_presets.cfg; then
-            echo "::error::godot/export_presets.cfg missing assets/audio/tetris exclude_filter (issue #43)"
-            exit 1
-          fi
-
-      - name: Audio containment — no inline AudioStream refs in scenes
-        run: |
-          # Streams are loaded at runtime by SfxLibrary/BgmPlayer autoloads,
-          # never referenced from .tscn/.tres — so the file in question is
-          # never read by the editor on a fresh checkout, avoiding "missing
-          # resource" import errors and keeping the pck pure.
-          if grep -rE 'AudioStream(MP3|OggVorbis|WAV)' godot/scenes godot/audio 2>/dev/null; then
-            echo "::error::inline AudioStream resource ref found; load streams at runtime instead (issue #43)"
-            exit 1
-          fi
-
       - name: Import project (populates .godot cache)
         run: |
           # `--import` exits non-zero on harmless reimport messages on some

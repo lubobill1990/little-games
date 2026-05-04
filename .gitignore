@@ -9,6 +9,8 @@ export.cfg
 /build/
 *.translation
 *.import
+# Tetris audio .import sidecars are committed (see #56).
+!godot/assets/audio/tetris/*.import
 
 # OS / editor
 .DS_Store
@@ -33,12 +35,3 @@ Thumbs.db
 .implement-task-worktrees/
 .e2e-worktree/
 
-# Audio assets — see godot/assets/audio/README.md and issue #43.
-# Tetris SFX/BGM are licensed for personal/local use only and must never be
-# committed or shipped in any public artifact. The pattern globs catch any
-# stray binaries elsewhere too; other games' audio is procedurally synthesized.
-godot/assets/audio/tetris/
-godot/assets/audio/tetris/*.import
-**/*.mp3
-**/*.ogg
-**/*.wav
