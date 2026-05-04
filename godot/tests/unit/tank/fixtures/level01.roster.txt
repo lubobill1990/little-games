@@ -1,0 +1,22 @@
+# level01 roster — FC default: bonus markers at #4, #11, #18 (1-indexed).
+# Whitespace-trimmed; blank lines and # comments ignored.
+basic
+basic
+basic
+basic +bonus
+fast
+fast
+basic
+power
+basic
+basic
+basic +bonus
+fast
+power
+fast
+armor
+basic
+basic
+fast +bonus
+armor
+power
